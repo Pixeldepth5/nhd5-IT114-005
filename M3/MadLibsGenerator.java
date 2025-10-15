@@ -17,7 +17,7 @@ Challenge 3: Mad Libs Generator (Randomized Stories)
 */
 
 // SOURCES (W3Schools) – direct URLs the professor can check:
-// - Reading user input (Scanner):        https://www.w3schools.com/java/java_user_input.asp
+// - Reading  user input (Scanner):        https://www.w3schools.com/java/java_user_input.asp
 // - Working with files (File):           https://www.w3schools.com/java/java_files.asp
 // - Random numbers (Random):             https://www.w3schools.com/java/java_math_random.asp
 // - Strings & replace:                   https://www.w3schools.com/java/java_strings_replace.asp
