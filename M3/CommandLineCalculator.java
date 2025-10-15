@@ -1,8 +1,7 @@
 package M3;
 
-import java.math.BigDecimal;
-import java.math.RoundingMode;
-import java.text.DecimalFormat;
+import java.math.BigDecimal;      // nhd5 / Nilkanth Dhariya / 10/12/25
+import java.text.DecimalFormat;   // nhd5 / Nilkanth Dhariya / 10/12/25
 
 /*
 Challenge 1: Command-Line Calculator
@@ -15,18 +14,22 @@ Challenge 1: Command-Line Calculator
 - Capture 5 variations of tests
 */
 
-// sources I used  - / - Java methods & main basics: https://www.w3schools.com/java/java_methods.asp
-// - try/catch exceptions:       https://www.w3schools.com/java/java_try_catch.asp
-// - BigDecimal intro:           https://www.w3schools.com/java/java_bigdecimal.asp
-// - Strings (parsing text):     https://www.w3schools.com/java/java_strings.asp
-// - Formatting numbers:         https://www.w3schools.com/java/java_format_numbers.asp
+/*
+  SOURCES I looked at (W3Schools – URLs my professor can check):
+  - Java methods & main:  https://www.w3schools.com/java/java_methods.asp
+  - try/catch basics:     https://www.w3schools.com/java/java_try_catch.asp
+  - BigDecimal intro:     https://www.w3schools.com/java/java_bigdecimal.asp
+  - Strings (indexOf…):   https://www.w3schools.com/java/java_strings.asp
+  - Number formatting:    https://www.w3schools.com/java/java_format_numbers.asp
+*/
 
 public class CommandLineCalculator extends BaseClass {
-    private static String ucid = "nhd5"; // <-- change to your ucid
+    private static String ucid = "nhd5"; // my UCID (nhd5)
 
     public static void main(String[] args) {
         printHeader(ucid, 1, "Objective: Implement a calculator using command-line arguments.");
 
+        // I need exactly 3 things: number, operator, number
         if (args.length != 3) {
             System.out.println("Usage: java M3.CommandLineCalculator <num1> <operator> <num2>");
             printFooter(ucid, 1);
@@ -35,45 +38,102 @@ public class CommandLineCalculator extends BaseClass {
 
         try {
             System.out.println("Calculating result...");
-            // extract the equation (format is <num1> <operator> <num2>)
-            String leftText  = args[0]; // first number as text
-            String opText    = args[1]; // + or -
-            String rightText = args[2]; // second number as text
-            // check if operator is addition or subtraction
-              if (!(opText.equals("+") || opText.equals("-"))) {
+
+            // get the three parts from command line
+            String leftText = args[0];
+            String opText = args[1];
+            String rightText = args[2];
+
+            // only + or - are allowed
+            if (!opText.equals("+") && !opText.equals("-")) {
                 System.out.println("Invalid operator. Use + or - only.");
                 printFooter(ucid, 1);
                 return;
             }
-            // check the type of each number and choose appropriate parsing
-            BigDecimal left  = new BigDecimal(leftText);
+
+            // make numbers from the text (BigDecimal keeps decimals accurate)
+            BigDecimal left = new BigDecimal(leftText);
             BigDecimal right = new BigDecimal(rightText);
 
-
-            // generate the equation result (Important: ensure decimals display as the
-            int leftDecimals  = countDecimals(leftText);  
-            int rightDecimals = countDecimals(rightText);  
-            int maxDecimals   = Math.max(leftDecimals, rightDecimals);
-            // longest decimal passed)
-             BigDecimal ans;
-            if (opText.equals("+")) {
-                ans = left.add(right);
-            } else {
-                ans = left.subtract(right);
+            // figure out how many decimals each input has (beginner way — just count after '.')
+            int leftDecimals = 0;
+            int dotL = leftText.indexOf('.');
+            if (dotL != -1) {
+                int end = leftText.length();
+                int e1 = leftText.indexOf('e');
+                int e2 = leftText.indexOf('E');
+                int ePos = -1;
+                if (e1 != -1 && e2 != -1) {
+                    ePos = (e1 < e2) ? e1 : e2;
+                } else if (e1 != -1) {
+                    ePos = e1;
+                } else if (e2 != -1) {
+                    ePos = e2;
+                }
+                if (ePos != -1) {
+                    end = ePos;
+                }
+                leftDecimals = end - dotL - 1;
+                if (leftDecimals < 0) leftDecimals = 0;
             }
-            // i.e., 0.1 + 0.2 would show as one decimal place (0.3), 0.11 + 0.2 would shows
-            String pattern = (maxDecimals == 0) ? "0" : ("0." + "0".repeat(maxDecimals));
+
+            int rightDecimals = 0;
+            int dotR = rightText.indexOf('.');
+            if (dotR != -1) {
+                int end = rightText.length();
+                int e1 = rightText.indexOf('e');
+                int e2 = rightText.indexOf('E');
+                int ePos = -1;
+                if (e1 != -1 && e2 != -1) {
+                    ePos = (e1 < e2) ? e1 : e2;
+                } else if (e1 != -1) {
+                    ePos = e1;
+                } else if (e2 != -1) {
+                    ePos = e2;
+                }
+                if (ePos != -1) {
+                    end = ePos;
+                }
+                rightDecimals = end - dotR - 1;
+                if (rightDecimals < 0) rightDecimals = 0;
+            }
+
+            int maxDecimals = leftDecimals;
+            if (rightDecimals > maxDecimals) {
+                maxDecimals = rightDecimals;
+            }
+
+            // do the math
+            BigDecimal answer;
+            if (opText.equals("+")) {
+                answer = left.add(right);
+            } else {
+                answer = left.subtract(right);
+            }
+
+            // build a simple pattern like "0" or "0.0" or "0.00" (beginner loop, no fancy repeat)
+            String pattern;
+            if (maxDecimals == 0) {
+                pattern = "0";
+            } else {
+                String dots = "0.";
+                int i = 0;
+                while (i < maxDecimals) {
+                    dots = dots + "0";
+                    i = i + 1;
+                }
+                pattern = dots;
+            }
+
+            // format the answer with that many decimals
             DecimalFormat df = new DecimalFormat(pattern);
-            df.setRoundingMode(RoundingMode.HALF_UP);
+            String formatted = df.format(answer);
 
-            String formatted = df.format(ans);
-
-            // as two (0.31), etc
+            // match the screenshot style
             System.out.println("The answer is " + formatted);
 
-
-
         } catch (Exception e) {
+            // any error: wrong numbers, wrong format, etc.
             System.out.println("Invalid input. Please ensure correct format and valid numbers.");
         }
 
