@@ -15,7 +15,7 @@ Challenge 1: Command-Line Calculator
 - Capture 5 variations of tests
 */
 
-// sources I used - / - Java methods & main basics: https://www.w3schools.com/java/java_methods.asp
+// sources I used  - / - Java methods & main basics: https://www.w3schools.com/java/java_methods.asp
 // - try/catch exceptions:       https://www.w3schools.com/java/java_try_catch.asp
 // - BigDecimal intro:           https://www.w3schools.com/java/java_bigdecimal.asp
 // - Strings (parsing text):     https://www.w3schools.com/java/java_strings.asp
