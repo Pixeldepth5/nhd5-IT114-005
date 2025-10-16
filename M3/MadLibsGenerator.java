@@ -35,7 +35,7 @@ public class MadLibsGenerator extends BaseClass {
 
         List<String> lines = new ArrayList<>();
 
-        // --- Step 1: Build a small pool of built-in stories from the text I was given (fallback) ---
+        // --- Step 1: Built-in stories (fallback) ---
         List<List<String>> builtInStories = new ArrayList<>();
 
         // Story 1
@@ -79,7 +79,7 @@ public class MadLibsGenerator extends BaseClass {
         s5.add("From that day forward, I became the most <adjective> person in town.");
         builtInStories.add(s5);
 
-        // --- Step 2: Try to load a random .txt story from the folder; if none found, use built-in ---
+        // --- Step 2: Try to load a random .txt story from the folder; if none, pick random built-in ---
         boolean pickedFromFolder = false;
         if (folder.exists() && folder.isDirectory()) {
             File[] all = folder.listFiles();
@@ -94,8 +94,9 @@ public class MadLibsGenerator extends BaseClass {
                 File[] pool = (txtOnly.size() > 0) ? txtOnly.toArray(new File[0]) : all;
 
                 if (pool.length > 0) {
-                    java.util.Random rng = new java.util.Random();
-                    File chosen = pool[rng.nextInt(pool.length)];
+                    // >>> use Math.random() so each run picks a random index <<<
+                    int pick = (int)(Math.random() * pool.length); // 0..length-1
+                    File chosen = pool[pick];
 
                     try (Scanner fileIn = new Scanner(chosen, "UTF-8")) {
                         while (fileIn.hasNextLine()) {
@@ -103,48 +104,41 @@ public class MadLibsGenerator extends BaseClass {
                         }
                         pickedFromFolder = true; // success
                     } catch (Exception e) {
-                        // if reading fails, we'll fall back to built-in pool below
-                        pickedFromFolder = false;
+                        pickedFromFolder = false; // fallback below
                     }
                 }
             }
         }
 
         if (!pickedFromFolder) {
-            // Randomly pick one of the built-in stories every run
-            java.util.Random rng = new java.util.Random();
-            List<String> chosenBuiltIn = builtInStories.get(rng.nextInt(builtInStories.size()));
+            // Randomly pick one of the built-in stories every run (also via Math.random)
+            int pick2 = (int)(Math.random() * builtInStories.size()); // 0..size-1
+            List<String> chosenBuiltIn = builtInStories.get(pick2);
             lines.addAll(chosenBuiltIn);
         }
 
-        // --- Step 3: For each line, find <placeholder> pieces and prompt the user to fill them ---
+        // --- Step 3: Replace placeholders by asking the user ---
         for (int i = 0; i < lines.size(); i++) {
             String line = lines.get(i);
 
             while (true) {
                 int start = line.indexOf('<');
-                if (start == -1) {
-                    break; // no token
-                }
+                if (start == -1) break;
                 int end = line.indexOf('>', start + 1);
-                if (end == -1) {
-                    break; // bad token, just stop
-                }
+                if (end == -1) break;
 
                 String token = line.substring(start + 1, end); // e.g., adjective or verb_ending_in_ing
-                String label = token.replace('_', ' ');        // show nicer prompt
+                String label = token.replace('_', ' ');        // nicer prompt (spaces)
 
                 System.out.print("Enter " + label + ": ");
-                String word = scanner.nextLine();              // any text is fine
+                String word = scanner.nextLine();              // any input is fine
 
-                // replace only this occurrence by rebuilding the string
                 String before = line.substring(0, start);
                 String after = line.substring(end + 1);
-                line = before + word + after;
+                line = before + word + after;                  // replace this one occurrence
             }
 
-            // put the updated line back in the same slot
-            lines.set(i, line);
+            lines.set(i, line); // write back
         }
 
         // --- Step 4: Print the final story ---
