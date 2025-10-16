@@ -14,7 +14,7 @@ Challenge 2: Simple Slash Command Handler
 - Capture 3 variations of each command except "/quit"
 */
 
-/* SOURCES I looked at (W3Schools – short + beginner friendly)
+/* SOURCES I looked at (W3Schools – beginner friendly)
    - Scanner (user input): https://www.w3schools.com/java/java_user_input.asp
    - Strings (split/trim): https://www.w3schools.com/java/java_strings.asp
    - Math.random():        https://www.w3schools.com/java/java_math.asp
@@ -30,27 +30,32 @@ public class SlashCommandHandler extends BaseClass {
 
         Scanner scanner = new Scanner(System.in);
 
+        // main REPL loop
         while (true) {
             System.out.print("Enter command: ");
-            String input = scanner.nextLine().trim();  // read line from user
+            if (!scanner.hasNextLine()) {
+                // if input stream closes, just quit nicely
+                System.out.println("Goodbye!");
+                break;
+            }
+            String input = scanner.nextLine().trim();
 
             if (input.length() == 0) {
                 System.out.println("Error: empty command. Try /greet, /roll, /echo, or /quit.");
                 continue;
             }
 
-            // split into command and the rest (case-insensitive command)
+            // split into command and the rest
             String[] parts = input.split("\\s+", 2);
             String cmd = parts[0].toLowerCase();
             String rest = (parts.length > 1) ? parts[1].trim() : "";
 
-            // ---------------- /quit ----------------
+            // /quit
             if (cmd.equals("/quit")) {
                 System.out.println("Goodbye!");
                 break;
             }
-
-            // ---------------- /greet <name> ----------------
+            // /greet <name>
             else if (cmd.equals("/greet")) {
                 if (rest.length() == 0) {
                     System.out.println("Error: Usage is /greet <name>");
@@ -58,8 +63,7 @@ public class SlashCommandHandler extends BaseClass {
                     System.out.println("Hello, " + rest + "!");
                 }
             }
-
-            // ---------------- /echo <message> ----------------
+            // /echo <message>
             else if (cmd.equals("/echo")) {
                 if (rest.length() == 0) {
                     System.out.println("Error: Usage is /echo <message>");
@@ -67,14 +71,11 @@ public class SlashCommandHandler extends BaseClass {
                     System.out.println(rest);
                 }
             }
-
-            // ---------------- /roll <num>d<sides> ----------------
+            // /roll <num>d<sides>
             else if (cmd.equals("/roll")) {
-                // format must look like: 2d6 (or 3D20)
                 if (rest.length() == 0) {
                     System.out.println("Error: Usage is /roll <num>d<sides>  (e.g., /roll 2d6)");
                 } else {
-                    // find 'd' (or 'D')
                     int dPos = rest.indexOf('d');
                     if (dPos == -1) dPos = rest.indexOf('D');
 
@@ -84,25 +85,23 @@ public class SlashCommandHandler extends BaseClass {
                         String numStr = rest.substring(0, dPos).trim();
                         String sidesStr = rest.substring(dPos + 1).trim();
 
-                        // try to parse integers
                         int num = -1;
                         int sides = -1;
                         try {
                             num = Integer.parseInt(numStr);
                             sides = Integer.parseInt(sidesStr);
                         } catch (Exception e) {
-                            // leave as -1
+                            // leave as -1; will error below
                         }
 
                         if (num < 1 || sides < 1) {
                             System.out.println("Error: both <num> and <sides> must be positive integers.");
                         } else {
-                            // roll once per die and sum them (beginner loop)
+                            // roll num dice of 1..sides and sum them
                             int total = 0;
                             int i = 0;
                             while (i < num) {
-                                // Math.random() gives 0.0 to <1.0, so convert to 1..sides
-                                int one = (int)(Math.random() * sides) + 1;
+                                int one = (int)(Math.random() * sides) + 1; // 1..sides
                                 total = total + one;
                                 i = i + 1;
                             }
@@ -111,8 +110,7 @@ public class SlashCommandHandler extends BaseClass {
                     }
                 }
             }
-
-            // ---------------- unknown command ----------------
+            // unknown command
             else {
                 System.out.println("Unhandled command");
             }
@@ -122,4 +120,3 @@ public class SlashCommandHandler extends BaseClass {
         scanner.close();
     }
 }
-
