@@ -7,50 +7,93 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 
+/**
+ * nhd5
+ * 
+ * Part 2 Server - Single connection version
+ * Adds support for `/pm <targetId> <message>` per assignment challenge.
+ * 
+ * Source (basic server socket example):
+ * https://www.w3schools.com/java/java_networking.asp
+ */
 public class Server {
     private int port = 3000;
+    // In Part 2 we simulate a single user with ID=1
+    private final int VALID_TARGET_ID = 1;
 
     private void start(int port) {
         this.port = port;
         System.out.println("Listening on port " + this.port);
-        // server listening
+
         try (ServerSocket serverSocket = new ServerSocket(port);
-                // client wait
-                Socket client = serverSocket.accept(); // blocking;
-                // send to client
-                PrintWriter out = new PrintWriter(client.getOutputStream(), true);
-                // read from client
-                BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));) {
+             Socket client = serverSocket.accept();  // blocking - one client only
+             PrintWriter out = new PrintWriter(client.getOutputStream(), true);
+             BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()))) {
 
             System.out.println("Client connected, waiting for message");
-            String fromClient = "";
+            String fromClient;
+
             while ((fromClient = in.readLine()) != null) {
                 System.out.println("From client: " + fromClient);
+
                 if ("/kill server".equalsIgnoreCase(fromClient)) {
-                    // normally you wouldn't have a remote kill command, this is just for example
-                    // sake
                     System.out.println("Client killed server");
                     break;
-                } else if (fromClient.startsWith("/reverse")) {
-                    // another example of server-side command
-                    // Note: In the future command format processing will be client-side
-                    // then client will send just the necessary data to the server so the server
-                    // doesn't need to do as much string processing
+                }
+                else if (fromClient.startsWith("/reverse")) {
                     StringBuilder sb = new StringBuilder(fromClient.replace("/reverse ", ""));
                     sb.reverse();
                     String rev = sb.toString();
                     System.out.println("To client: " + rev);
                     out.println(rev);
-                } else {
-                    System.out.println("To client: " + fromClient);
+                }
+                else if (fromClient.startsWith("/pm")) {
+                    handlePrivateMessage(fromClient, out);
+                }
+                else {
                     out.println(fromClient);
                 }
             }
+
         } catch (IOException e) {
             System.out.println("Exception from start()");
             e.printStackTrace();
         } finally {
             System.out.println("closing server socket");
+        }
+    }
+
+    /**
+     * Handles the `/pm <id> <message>` private message command.
+     * This simulates only a single user (ID=1).
+     *
+     * @param pmMessage the raw `/pm ...` string from client
+     * @param out       PrintWriter to send result back
+     *
+     * Source for string split:
+     * https://www.w3schools.com/java/ref_string_split.asp
+     */
+    private void handlePrivateMessage(String pmMessage, PrintWriter out) {
+        String[] parts = pmMessage.split("\\s+", 3);
+
+        if (parts.length < 3) {
+            out.println("Usage: /pm <targetId> <message>");
+            return;
+        }
+
+        try {
+            int targetId = Integer.parseInt(parts[1]);
+            String message = parts[2];
+
+            if (targetId == VALID_TARGET_ID) {
+                // Format required per rubric: PM from <who>: <message>
+                out.println("PM from 1: " + message);
+            } else {
+                out.println("User " + targetId + " not found");
+            }
+
+        } catch (NumberFormatException e) {
+            out.println("Invalid target id");
         }
     }
 
@@ -61,8 +104,7 @@ public class Server {
         try {
             port = Integer.parseInt(args[0]);
         } catch (Exception e) {
-            // can ignore, will either be index out of bounds or type mismatch
-            // will default to the defined value prior to the try/catch
+            // ignore invalid arg
         }
         server.start(port);
         System.out.println("Server Stopped");
