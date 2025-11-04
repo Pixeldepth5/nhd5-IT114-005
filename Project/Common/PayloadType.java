@@ -1,14 +1,16 @@
-package M5.Part5;
+// UCID: nhd5
+// Date: November 3, 2025
+// Description: TriviaGuessGame PayloadType – defines message categories shared by client and server
+// Reference: https://www.w3schools.com/java/
+
+package Common;
 
 public enum PayloadType {
-    CLIENT_CONNECT, // client requesting to connect to server (passing of initialization data
-                    // [name])
-    CLIENT_ID, // server sending client id
-    SYNC_CLIENT, // silent syncing of clients in room
-    DISCONNECT, // distinct disconnect action
-    ROOM_CREATE,
-    ROOM_JOIN,
-    ROOM_LEAVE,
-    REVERSE,
-    MESSAGE // sender and message
+    CLIENT_CONNECT,   // when client connects to server
+    CLIENT_ID,        // when server assigns client an ID
+    MESSAGE,          // regular chat or trivia messages
+    ROOM_CREATE,      // room creation request
+    ROOM_JOIN,        // room joining
+    ROOM_LEAVE,       // room leaving
+    DISCONNECT        // disconnect event
 }

@@ -1,7 +1,12 @@
-package M5.Part5;
+// UCID: nhd5
+// Date: November 3, 2025
+// Description: TriviaGuessGame Constants – defines shared constants like command triggers and default IDs
+// Reference: https://www.w3schools.com/java/
+
+package Common;
 
 public abstract class Constants {
-    final public static String COMMAND_TRIGGER = "/";
-    final public static String SINGLE_SPACE = " ";
-    final public static long DEFAULT_CLIENT_ID = -1;
+    public static final String COMMAND_TRIGGER = "/";
+    public static final String SINGLE_SPACE = " ";
+    public static final long DEFAULT_CLIENT_ID = -1;
 }

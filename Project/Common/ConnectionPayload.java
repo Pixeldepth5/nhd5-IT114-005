@@ -1,27 +1,23 @@
-package M5.Part5;
+// UCID: nhd5
+// Date: November 3, 2025
+// Description: TriviaGuessGame ConnectionPayload – used during client connection handshake
+// Reference: https://www.w3schools.com/java/
+
+package Common;
 
 public class ConnectionPayload extends Payload {
     private String clientName;
 
-    /**
-     * @return the clientName
-     */
     public String getClientName() {
         return clientName;
     }
 
-    /**
-     * @param clientName the clientName to set
-     */
-    public void setClientName(String clientName) {
-        this.clientName = clientName;
+    public void setClientName(String name) {
+        this.clientName = name;
     }
 
     @Override
     public String toString() {
-        return super.toString() +
-                String.format(" ClientName: [%s]",
-                        getClientName());
+        return super.toString() + String.format(" ClientName[%s]", clientName);
     }
-
 }

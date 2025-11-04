@@ -1,0 +1,38 @@
+// UCID: nhd5
+// Date: November 3, 2025
+// Description: TriviaGuessGame Client User – manages user identity
+// Reference: https://www.w3schools.com/java/
+
+package Client;
+
+import Common.Constants;
+
+public class User {
+    private long clientId = Constants.DEFAULT_CLIENT_ID;
+    private String clientName;
+
+    public long getClientId() {
+        return clientId;
+    }
+
+    public void setClientId(long clientId) {
+        this.clientId = clientId;
+    }
+
+    public String getClientName() {
+        return clientName;
+    }
+
+    public void setClientName(String name) {
+        this.clientName = name;
+    }
+
+    public String getDisplayName() {
+        return String.format("%s#%d", clientName, clientId);
+    }
+
+    public void reset() {
+        clientId = Constants.DEFAULT_CLIENT_ID;
+        clientName = null;
+    }
+}

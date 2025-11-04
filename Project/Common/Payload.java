@@ -1,4 +1,9 @@
-package M5.Part5;
+// UCID: nhd5
+// Date: November 3, 2025
+// Description: TriviaGuessGame Payload – base object used to send data between client and server
+// Reference: https://www.w3schools.com/java/
+
+package Common;
 
 import java.io.Serializable;
 
@@ -7,50 +12,32 @@ public class Payload implements Serializable {
     private long clientId;
     private String message;
 
-    /**
-     * @return the payloadType
-     */
     public PayloadType getPayloadType() {
         return payloadType;
     }
 
-    /**
-     * @param payloadType the payloadType to set
-     */
     public void setPayloadType(PayloadType payloadType) {
         this.payloadType = payloadType;
     }
 
-    /**
-     * @return the clientId
-     */
     public long getClientId() {
         return clientId;
     }
 
-    /**
-     * @param clientId the clientId to set
-     */
     public void setClientId(long clientId) {
         this.clientId = clientId;
     }
 
-    /**
-     * @return the message
-     */
     public String getMessage() {
         return message;
     }
 
-    /**
-     * @param message the message to set
-     */
     public void setMessage(String message) {
         this.message = message;
     }
 
     @Override
     public String toString() {
-        return String.format("Payload[%s] Client Id [%s] Message: [%s]", getPayloadType(), getClientId(), getMessage());
+        return String.format("Payload[%s] ClientId[%d] Message[%s]", payloadType, clientId, message);
     }
 }
