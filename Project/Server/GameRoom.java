@@ -1,7 +1,7 @@
 // UCID: nhd5
 // Date: November 23, 2025
 // Description: WordGuesserGame GameRoom – core word guessing logic for Milestone 2
-// Reference: 
+// Reference:
 //   https://www.w3schools.com/java/java_arraylist.asp (ArrayList & loops)
 //   https://www.w3schools.com/java/java_hashmap.asp (HashMap for points)
 //   https://www.w3schools.com/java/java_files_read.asp (reading text files)
@@ -10,7 +10,10 @@
 package Server;
 
 import Common.*;
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.*;
 
 public class GameRoom extends Room {
@@ -44,24 +47,36 @@ public class GameRoom extends Room {
     }
 
     @Override
+    protected synchronized void handleDisconnect(ServerThread sender) {
+        super.handleDisconnect(sender);
+        readyPlayers.remove(sender.getClientId());
+        turnOrder.remove(Long.valueOf(sender.getClientId()));
+        points.remove(sender.getClientId());
+    }
+
+    @Override
     protected synchronized void handleMessage(ServerThread sender, String msg) {
         String text = msg.trim();
 
+        // Ready up
         if (text.equalsIgnoreCase("/ready")) {
             readyPlayers.add(sender.getClientId());
             broadcast(null, sender.getDisplayName() + " is ready!");
 
-            if (!activeSession && readyPlayers.size() == getClients().size()) {
+            if (!activeSession && !getClients().isEmpty()
+                    && readyPlayers.size() == getClients().size()) {
                 startSession();
             }
             return;
         }
 
+        // If game not started yet, normal chat
         if (!activeSession) {
             super.handleMessage(sender, msg);
             return;
         }
 
+        // Game commands
         if (text.startsWith("/guess ")) {
             handleWordGuess(sender, text.substring(7).trim());
         } else if (text.startsWith("/letter ")) {
@@ -73,7 +88,7 @@ public class GameRoom extends Room {
         }
     }
 
-    // ----------------- SESSION CONTROL ----------------- //
+    // ----------------- SESSION / ROUND CONTROL ----------------- //
 
     private void startSession() {
         loadWords();
@@ -103,8 +118,11 @@ public class GameRoom extends Room {
     private void endRound(String reason) {
         broadcast(null, "Round ended: " + reason);
         showScoreboard("Current scores:");
-        if (round >= MAX_ROUNDS) endSession();
-        else startRound();
+        if (round >= MAX_ROUNDS) {
+            endSession();
+        } else {
+            startRound();
+        }
     }
 
     private void endSession() {
@@ -115,10 +133,38 @@ public class GameRoom extends Room {
         broadcast(null, "Type /ready to play again!");
     }
 
-    // ----------------- GAME LOGIC ----------------- //
+    // ----------------- TURN CONTROL ----------------- //
+
+    private void nextTurn() {
+        if (turnOrder.isEmpty()) {
+            return;
+        }
+
+        if (currentTurn < 0) {
+            // First turn in round – random start
+            currentTurn = random.nextInt(turnOrder.size());
+        } else {
+            currentTurn = (currentTurn + 1) % turnOrder.size();
+        }
+
+        long id = turnOrder.get(currentTurn);
+        ServerThread player = findClient(id);
+        if (player == null) {
+            return;
+        }
+
+        broadcast(null, "It's now " + player.getDisplayName() + "'s turn!");
+        broadcast(null, "Word: " + showBlanks() +
+                " | Strikes: " + strikes + "/" + MAX_STRIKES);
+    }
+
+    // ----------------- COMMAND HANDLERS ----------------- //
 
     private void handleWordGuess(ServerThread sender, String guess) {
-        if (!isTurn(sender)) return;
+        if (!isTurn(sender)) {
+            sender.sendMessage(-1, "It is not your turn.");
+            return;
+        }
 
         if (guess.equalsIgnoreCase(currentWord)) {
             int missing = missingLetters();
@@ -136,10 +182,16 @@ public class GameRoom extends Room {
     }
 
     private void handleLetterGuess(ServerThread sender, String arg) {
-        if (!isTurn(sender)) return;
-        if (arg.isEmpty()) return;
+        if (!isTurn(sender)) {
+            sender.sendMessage(-1, "It is not your turn.");
+            return;
+        }
+        if (arg.isEmpty()) {
+            return;
+        }
 
         char letter = Character.toLowerCase(arg.charAt(0));
+
         if (guessedLetters.contains(letter)) {
             sender.sendMessage(-1, "Letter already guessed.");
             nextTurn();
@@ -148,6 +200,7 @@ public class GameRoom extends Room {
 
         guessedLetters.add(letter);
         int matches = 0;
+
         for (int i = 0; i < currentWord.length(); i++) {
             if (Character.toLowerCase(currentWord.charAt(i)) == letter && blanks[i] == '_') {
                 blanks[i] = currentWord.charAt(i);
@@ -161,8 +214,11 @@ public class GameRoom extends Room {
             broadcast(null, sender.getDisplayName() + " found " + matches +
                     " '" + letter + "' and got " + gained + " points!");
             broadcast(null, "Word: " + showBlanks());
-            if (isSolved()) endRound("Word completed!");
-            else nextTurn();
+            if (isSolved()) {
+                endRound("Word completed!");
+            } else {
+                nextTurn();
+            }
         } else {
             strikes++;
             broadcast(null, sender.getDisplayName() + " guessed '" + letter +
@@ -180,44 +236,36 @@ public class GameRoom extends Room {
         }
     }
 
-    private void nextTurn() {
-        if (turnOrder.isEmpty()) return;
-
-        if (currentTurn < 0) {
-            currentTurn = random.nextInt(turnOrder.size());
-        } else {
-            currentTurn = (currentTurn + 1) % turnOrder.size();
-        }
-
-        long id = turnOrder.get(currentTurn);
-        ServerThread player = findClient(id);
-        if (player == null) return;
-
-        broadcast(null, "It's now " + player.getDisplayName() + "'s turn!");
-        broadcast(null, "Word: " + showBlanks() +
-                " | Strikes: " + strikes + "/" + MAX_STRIKES);
-    }
-
-    // ----------------- HELPERS ----------------- //
+    // ----------------- HELPER LOGIC ----------------- //
 
     private void checkStrikeEnd() {
-        if (strikes >= MAX_STRIKES) endRound("Too many strikes!");
-        else nextTurn();
+        if (strikes >= MAX_STRIKES) {
+            endRound("Too many strikes!");
+        } else {
+            nextTurn();
+        }
     }
 
     private void loadWords() {
-        if (!wordList.isEmpty()) return;
-
+        if (!wordList.isEmpty()) {
+            return;
+        }
+        // File reading pattern from W3Schools "Java Files - Read Files"
         try (InputStream in = getClass().getResourceAsStream("words.txt")) {
-            if (in == null) throw new IOException("words.txt not found");
+            if (in == null) {
+                throw new IOException("words.txt not found");
+            }
             try (BufferedReader br = new BufferedReader(new InputStreamReader(in))) {
                 String line;
                 while ((line = br.readLine()) != null) {
                     line = line.trim();
-                    if (!line.isEmpty()) wordList.add(line);
+                    if (!line.isEmpty()) {
+                        wordList.add(line);
+                    }
                 }
             }
         } catch (IOException e) {
+            // Fallback default words if file is missing
             wordList.addAll(Arrays.asList("java", "socket", "payload", "network", "server"));
         }
     }
@@ -228,30 +276,45 @@ public class GameRoom extends Room {
 
     private char[] makeBlanks(String w) {
         char[] arr = new char[w.length()];
-        for (int i = 0; i < w.length(); i++) arr[i] = Character.isLetter(w.charAt(i)) ? '_' : w.charAt(i);
+        for (int i = 0; i < w.length(); i++) {
+            char c = w.charAt(i);
+            arr[i] = Character.isLetter(c) ? '_' : c;
+        }
         return arr;
     }
 
     private String showBlanks() {
         StringBuilder sb = new StringBuilder();
-        for (char c : blanks) sb.append(c).append(' ');
+        for (char c : blanks) {
+            sb.append(c).append(' ');
+        }
         return sb.toString().trim();
     }
 
     private int missingLetters() {
         int m = 0;
-        for (char c : blanks) if (c == '_') m++;
+        for (char c : blanks) {
+            if (c == '_') {
+                m++;
+            }
+        }
         return m;
     }
 
     private boolean isSolved() {
-        for (char c : blanks) if (c == '_') return false;
+        for (char c : blanks) {
+            if (c == '_') {
+                return false;
+            }
+        }
         return true;
     }
 
     private void initTurnOrder() {
         turnOrder.clear();
-        for (ServerThread s : getClients()) turnOrder.add(s.getClientId());
+        for (ServerThread s : getClients()) {
+            turnOrder.add(s.getClientId());
+        }
         Collections.shuffle(turnOrder, random);
     }
 
@@ -260,7 +323,11 @@ public class GameRoom extends Room {
     }
 
     private ServerThread findClient(long id) {
-        for (ServerThread s : getClients()) if (s.getClientId() == id) return s;
+        for (ServerThread s : getClients()) {
+            if (s.getClientId() == id) {
+                return s;
+            }
+        }
         return null;
     }
 
@@ -276,7 +343,9 @@ public class GameRoom extends Room {
         p.setPoints(newTotal);
         p.setMessage(s.getDisplayName() + " now has " + newTotal + " points.");
 
-        for (ServerThread st : getClients()) st.sendPayload(p);
+        for (ServerThread st : getClients()) {
+            st.sendPayload(p);
+        }
     }
 
     private void showScoreboard(String header) {
