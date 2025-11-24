@@ -1,7 +1,7 @@
 // UCID: nhd5
-// Date: November 3, 2025
-// Description: TriviaGuessGame ServerThread – manages communication with individual clients
-// Reference: https://www.w3schools.com/java/
+// Date: November 23, 2025
+// Description: WordGuesserGame ServerThread – manages communication with individual clients
+// Reference: https://www.w3schools.com/java/java_methods.asp (defining methods with parameters & return types)
 
 package Server;
 
@@ -9,7 +9,6 @@ import Common.*;
 import java.net.Socket;
 import java.util.Objects;
 import java.util.function.Consumer;
-
 
 public class ServerThread extends BaseServerThread {
     private Consumer<ServerThread> onInitializationComplete;
@@ -38,16 +37,13 @@ public class ServerThread extends BaseServerThread {
     protected void onInitialized() {
         onInitializationComplete.accept(this);
     }
+
     // ===== NEW for WordGuesserGame (Milestone 2) =====
-    // UCID: nhd5
-    // Date: November 23, 2025
-    // Description: Added sendPayload helper for WordGuesserGame
-    // Reference: https://www.w3schools.com/java/java_methods.asp (defining methods with parameters & return type)
+    // Reference: https://www.w3schools.com/java/java_methods.asp (methods with parameters & return types)
 
     /**
      * Helper method so a Room (like GameRoom) can send any kind of Payload
-     * directly to this client. This follows the simple method pattern from
-     * W3Schools: a method with a parameter and a boolean return value.
+     * directly to this client.
      */
     public boolean sendPayload(Payload payload) {
         return sendToClient(payload);
