@@ -1,361 +1,75 @@
 // UCID: nhd5
-// Date: November 23, 2025
-// Description: WordGuesserGame GameRoom – core word guessing logic for Milestone 2
-// Reference:
-//   https://www.w3schools.com/java/java_arraylist.asp (ArrayList & loops)
-//   https://www.w3schools.com/java/java_hashmap.asp (HashMap for points)
-//   https://www.w3schools.com/java/java_files_read.asp (reading text files)
-//   https://www.w3schools.com/java/java_random.asp (Random for picking words)
+// Date: December 3, 2025
+// Description: TriviaGuessGame Server – Fetches trivia questions based on player-selected categories.
+// Reference: Open Trivia Database API
 
-package Server;
-
-import Common.*;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.*;
 
 public class GameRoom extends Room {
-    private static final int MAX_STRIKES = 6;
-    private static final int MAX_ROUNDS = 3;
-    private static final int POINTS_PER_LETTER = 10;
-    private static final int SOLVE_BONUS_MULTIPLIER = 2;
+    private static final String TRIVIA_API_URL = "https://opentdb.com/api.php?amount=5&category=%d&type=multiple"; // API URL for trivia questions
+    private static final Map<String, Integer> CATEGORY_MAP = Map.of(
+        "Music", 12,
+        "Sports", 21,
+        "Arts", 25,
+        "Movies", 11,
+        "History", 23,
+        "Geography", 22
+    );
+    
+    // Method to fetch trivia questions based on category
+    private List<String> fetchQuestions(String category) {
+        try {
+            int categoryId = CATEGORY_MAP.getOrDefault(category, 11); // Default to "Movies"
+            String apiUrl = String.format(TRIVIA_API_URL, categoryId);
+            HttpURLConnection connection = (HttpURLConnection) new URL(apiUrl).openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
 
-    private final List<String> wordList = new ArrayList<>();
-    private final Random random = new Random();
-
-    private String currentWord;
-    private char[] blanks;
-    private final Set<Character> guessedLetters = new HashSet<>();
-    private final Map<Long, Integer> points = new HashMap<>();
-    private final Set<Long> readyPlayers = new HashSet<>();
-    private final List<Long> turnOrder = new ArrayList<>();
-    private int currentTurn = -1;
-    private int strikes = 0;
-    private int round = 0;
-    private boolean activeSession = false;
-
-    public GameRoom(String name) {
-        super(name);
-    }
-
-    @Override
-    protected synchronized void addClient(ServerThread client) {
-        super.addClient(client);
-        points.putIfAbsent(client.getClientId(), 0);
-    }
-
-    @Override
-    protected synchronized void handleDisconnect(ServerThread sender) {
-        super.handleDisconnect(sender);
-        readyPlayers.remove(sender.getClientId());
-        turnOrder.remove(Long.valueOf(sender.getClientId()));
-        points.remove(sender.getClientId());
-    }
-
-    @Override
-    protected synchronized void handleMessage(ServerThread sender, String msg) {
-        String text = msg.trim();
-
-        // Ready up
-        if (text.equalsIgnoreCase("/ready")) {
-            readyPlayers.add(sender.getClientId());
-            broadcast(null, sender.getDisplayName() + " is ready!");
-
-            if (!activeSession && !getClients().isEmpty()
-                    && readyPlayers.size() == getClients().size()) {
-                startSession();
+            BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+            String inputLine;
+            StringBuilder content = new StringBuilder();
+            while ((inputLine = in.readLine()) != null) {
+                content.append(inputLine);
             }
-            return;
-        }
+            in.close();
 
-        // If game not started yet, normal chat
-        if (!activeSession) {
-            super.handleMessage(sender, msg);
-            return;
-        }
-
-        // Game commands
-        if (text.startsWith("/guess ")) {
-            handleWordGuess(sender, text.substring(7).trim());
-        } else if (text.startsWith("/letter ")) {
-            handleLetterGuess(sender, text.substring(8).trim());
-        } else if (text.equalsIgnoreCase("/skip")) {
-            handleSkip(sender);
-        } else {
-            super.handleMessage(sender, msg);
-        }
-    }
-
-    // ----------------- SESSION / ROUND CONTROL ----------------- //
-
-    private void startSession() {
-        loadWords();
-        readyPlayers.clear();
-        points.replaceAll((k, v) -> 0);
-        activeSession = true;
-        round = 0;
-        broadcast(null, "=== Starting Word Guesser Session ===");
-        startRound();
-    }
-
-    private void startRound() {
-        round++;
-        strikes = 0;
-        guessedLetters.clear();
-
-        currentWord = pickRandomWord();
-        blanks = makeBlanks(currentWord);
-        initTurnOrder();
-
-        broadcast(null, "Round " + round + "/" + MAX_ROUNDS);
-        broadcast(null, "Word: " + showBlanks());
-        currentTurn = -1;
-        nextTurn();
-    }
-
-    private void endRound(String reason) {
-        broadcast(null, "Round ended: " + reason);
-        showScoreboard("Current scores:");
-        if (round >= MAX_ROUNDS) {
-            endSession();
-        } else {
-            startRound();
-        }
-    }
-
-    private void endSession() {
-        broadcast(null, "=== GAME OVER ===");
-        showScoreboard("Final scores:");
-        activeSession = false;
-        readyPlayers.clear();
-        broadcast(null, "Type /ready to play again!");
-    }
-
-    // ----------------- TURN CONTROL ----------------- //
-
-    private void nextTurn() {
-        if (turnOrder.isEmpty()) {
-            return;
-        }
-
-        if (currentTurn < 0) {
-            // First turn in round – random start
-            currentTurn = random.nextInt(turnOrder.size());
-        } else {
-            currentTurn = (currentTurn + 1) % turnOrder.size();
-        }
-
-        long id = turnOrder.get(currentTurn);
-        ServerThread player = findClient(id);
-        if (player == null) {
-            return;
-        }
-
-        broadcast(null, "It's now " + player.getDisplayName() + "'s turn!");
-        broadcast(null, "Word: " + showBlanks() +
-                " | Strikes: " + strikes + "/" + MAX_STRIKES);
-    }
-
-    // ----------------- COMMAND HANDLERS ----------------- //
-
-    private void handleWordGuess(ServerThread sender, String guess) {
-        if (!isTurn(sender)) {
-            sender.sendMessage(-1, "It is not your turn.");
-            return;
-        }
-
-        if (guess.equalsIgnoreCase(currentWord)) {
-            int missing = missingLetters();
-            int score = missing * POINTS_PER_LETTER * SOLVE_BONUS_MULTIPLIER;
-            addPoints(sender, score);
-            broadcast(null, sender.getDisplayName() + " guessed the word '" +
-                    currentWord + "' and earned " + score + " points!");
-            endRound("Word solved!");
-        } else {
-            strikes++;
-            broadcast(null, sender.getDisplayName() + " guessed '" + guess +
-                    "' – wrong! (" + strikes + "/" + MAX_STRIKES + ")");
-            checkStrikeEnd();
-        }
-    }
-
-    private void handleLetterGuess(ServerThread sender, String arg) {
-        if (!isTurn(sender)) {
-            sender.sendMessage(-1, "It is not your turn.");
-            return;
-        }
-        if (arg.isEmpty()) {
-            return;
-        }
-
-        char letter = Character.toLowerCase(arg.charAt(0));
-
-        if (guessedLetters.contains(letter)) {
-            sender.sendMessage(-1, "Letter already guessed.");
-            nextTurn();
-            return;
-        }
-
-        guessedLetters.add(letter);
-        int matches = 0;
-
-        for (int i = 0; i < currentWord.length(); i++) {
-            if (Character.toLowerCase(currentWord.charAt(i)) == letter && blanks[i] == '_') {
-                blanks[i] = currentWord.charAt(i);
-                matches++;
-            }
-        }
-
-        if (matches > 0) {
-            int gained = matches * POINTS_PER_LETTER;
-            addPoints(sender, gained);
-            broadcast(null, sender.getDisplayName() + " found " + matches +
-                    " '" + letter + "' and got " + gained + " points!");
-            broadcast(null, "Word: " + showBlanks());
-            if (isSolved()) {
-                endRound("Word completed!");
-            } else {
-                nextTurn();
-            }
-        } else {
-            strikes++;
-            broadcast(null, sender.getDisplayName() + " guessed '" + letter +
-                    "' – no matches!");
-            checkStrikeEnd();
-        }
-    }
-
-    private void handleSkip(ServerThread sender) {
-        if (isTurn(sender)) {
-            broadcast(null, sender.getDisplayName() + " skipped their turn.");
-            nextTurn();
-        } else {
-            sender.sendMessage(-1, "Not your turn.");
-        }
-    }
-
-    // ----------------- HELPER LOGIC ----------------- //
-
-    private void checkStrikeEnd() {
-        if (strikes >= MAX_STRIKES) {
-            endRound("Too many strikes!");
-        } else {
-            nextTurn();
-        }
-    }
-
-    private void loadWords() {
-        if (!wordList.isEmpty()) {
-            return;
-        }
-        // File reading pattern from W3Schools "Java Files - Read Files"
-        try (InputStream in = getClass().getResourceAsStream("words.txt")) {
-            if (in == null) {
-                throw new IOException("words.txt not found");
-            }
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(in))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    line = line.trim();
-                    if (!line.isEmpty()) {
-                        wordList.add(line);
-                    }
-                }
-            }
+            return parseTriviaQuestions(content.toString());
         } catch (IOException e) {
-            // Fallback default words if file is missing
-            wordList.addAll(Arrays.asList("java", "socket", "payload", "network", "server"));
+            e.printStackTrace();
+            return Collections.singletonList("Error fetching questions.");
         }
     }
 
-    private String pickRandomWord() {
-        return wordList.get(random.nextInt(wordList.size()));
-    }
-
-    private char[] makeBlanks(String w) {
-        char[] arr = new char[w.length()];
-        for (int i = 0; i < w.length(); i++) {
-            char c = w.charAt(i);
-            arr[i] = Character.isLetter(c) ? '_' : c;
+    // Parse the JSON response to extract questions
+    private List<String> parseTriviaQuestions(String json) {
+        List<String> questions = new ArrayList<>();
+        String pattern = "\"question\":\"(.*?)\""; // Regex to extract question text
+        Matcher matcher = Pattern.compile(pattern).matcher(json);
+        while (matcher.find()) {
+            questions.add(matcher.group(1));  // Add each question to list
         }
-        return arr;
+        return questions;
     }
 
-    private String showBlanks() {
-        StringBuilder sb = new StringBuilder();
-        for (char c : blanks) {
-            sb.append(c).append(' ');
+    // Start the round with the selected category
+    private void startRoundWithCategory(String category) {
+        List<String> questions = fetchQuestions(category);
+        if (questions.isEmpty()) {
+            broadcast(null, "Error fetching questions.");
+            return;
         }
-        return sb.toString().trim();
-    }
-
-    private int missingLetters() {
-        int m = 0;
-        for (char c : blanks) {
-            if (c == '_') {
-                m++;
-            }
-        }
-        return m;
-    }
-
-    private boolean isSolved() {
-        for (char c : blanks) {
-            if (c == '_') {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private void initTurnOrder() {
-        turnOrder.clear();
-        for (ServerThread s : getClients()) {
-            turnOrder.add(s.getClientId());
-        }
-        Collections.shuffle(turnOrder, random);
-    }
-
-    private boolean isTurn(ServerThread s) {
-        return !turnOrder.isEmpty() && s.getClientId() == turnOrder.get(currentTurn);
-    }
-
-    private ServerThread findClient(long id) {
-        for (ServerThread s : getClients()) {
-            if (s.getClientId() == id) {
-                return s;
-            }
-        }
-        return null;
-    }
-
-    private void addPoints(ServerThread s, int pts) {
-        long id = s.getClientId();
-        int newTotal = points.getOrDefault(id, 0) + pts;
-        points.put(id, newTotal);
-
-        PointsPayload p = new PointsPayload();
-        p.setPayloadType(PayloadType.POINTS_UPDATE);
-        p.setClientId(-1);
-        p.setTargetClientId(id);
-        p.setPoints(newTotal);
-        p.setMessage(s.getDisplayName() + " now has " + newTotal + " points.");
-
-        for (ServerThread st : getClients()) {
-            st.sendPayload(p);
+        broadcast(null, "Round starting with category: " + category);
+        for (String question : questions) {
+            broadcast(null, "Question: " + question);
         }
     }
-
-    private void showScoreboard(String header) {
-        broadcast(null, header);
-        points.entrySet().stream()
-                .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
-                .forEach(e -> {
-                    ServerThread st = findClient(e.getKey());
-                    String name = (st != null) ? st.getDisplayName() : ("Player#" + e.getKey());
-                    broadcast(null, name + ": " + e.getValue() + " points");
-                });
+    
+    // Handle when a player selects a category
+    public void playerSelectedCategory(String category) {
+        startRoundWithCategory(category);
     }
 }
