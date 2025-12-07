@@ -1,8 +1,7 @@
 // UCID: nhd5
-// Date: December 8, 2025
-// Description: PayloadType for Trivia Game (Milestone 3)
+// Date: December 7, 2025
+// Description: TriviaGuessGame PayloadType – defines message categories shared by client and server
 // Reference: https://www.w3schools.com/java/java_enums.asp
-
 package Common;
 
 public enum PayloadType {
@@ -14,9 +13,11 @@ public enum PayloadType {
     ROOM_LEAVE,
     DISCONNECT,
 
-    // Game-specific payloads
-    QUESTION,       // QAPayload: category + question + answers
-    USER_LIST,      // UserListPayload: players, scores, locked/away/spectator
-    POINTS_UPDATE,  // PointsPayload: sync player points
-    TIMER           // send countdown timer each second
+    // Milestone 2+
+    POINTS_UPDATE,
+
+    // Milestone 3 – trivia game specific
+    QA_UPDATE,          // sends question + answers
+    USERLIST_UPDATE,    // syncs user list / points / lock-in / away / spectator
+    TIMER               // round countdown timer
 }

@@ -1,17 +1,17 @@
 // UCID: nhd5
-// Date: December 8, 2025
-// Description: Sends question + answers + category to clients
+// Date: December 7, 2025
+// Description: TriviaGuessGame QAPayload – sends question + answers to clients
 // Reference: https://www.w3schools.com/java/java_arraylist.asp
-
 package Common;
 
 import java.util.ArrayList;
 
 public class QAPayload extends Payload {
-
     private String category;
     private String questionText;
     private ArrayList<String> answers = new ArrayList<>();
+    // Correct answer index is kept server-side for scoring, not shown to players
+    private int correctIndex;
 
     public String getCategory() {
         return category;
@@ -37,8 +37,17 @@ public class QAPayload extends Payload {
         this.answers = answers;
     }
 
+    public int getCorrectIndex() {
+        return correctIndex;
+    }
+
+    public void setCorrectIndex(int correctIndex) {
+        this.correctIndex = correctIndex;
+    }
+
     @Override
     public String toString() {
-        return super.toString() + " Category[" + category + "] Question[" + questionText + "]";
+        return super.toString() + String.format(" Category[%s] Question[%s] AnswerCount[%d]",
+                category, questionText, answers.size());
     }
 }
