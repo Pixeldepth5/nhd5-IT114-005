@@ -1,17 +1,9 @@
 // UCID: nhd5
-// Date: November 23, 2025
-// Description: WordGuesserGame PointsPayload – used to sync player points to all clients
+// Date: December 7, 2025
+// Description: TriviaGuessGame PointsPayload – used to sync player points to all clients
 // Reference: https://www.w3schools.com/java/java_classes.asp (creating custom classes & objects)
-
 package Common;
 
-/**
- * PointsPayload is sent from the server to clients
- * whenever a player's score changes.
- *
- * Idea of making a small "data class" with getters and setters
- * came from the W3Schools examples on Java classes & objects.
- */
 public class PointsPayload extends Payload {
     private long targetClientId;
     private int points;

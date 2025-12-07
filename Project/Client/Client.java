@@ -1,295 +1,526 @@
 // UCID: nhd5
-// Date: December 3, 2025
-// Description: TriviaGuessGame Client – UI with dynamic category selection, modern buttons, and fonts (Visby Bold for titles, Nineities for sub-text).
-
+// Date: December 7, 2025
+// Description: TriviaGuessGame Client – Swing UI with connection, ready check, user list, game events, and game area
+// Reference:
+//  - https://www.w3schools.com/java/java_swing.asp (basic Swing components)
+//  - https://www.w3schools.com/java/java_arraylist.asp (ArrayList usage)
+//  - https://www.w3schools.com/java/java_threads.asp (basic threads)
 package Client;
 
 import Common.*;
 import java.awt.*;
-import java.io.IOException;
+import java.awt.event.ActionEvent;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
-import java.util.concurrent.CompletableFuture;
+import java.util.ArrayList;
 import javax.swing.*;
+import javax.swing.border.TitledBorder;
 
 public class Client {
-    private Socket server;
+
+    // Network
+    private Socket socket;
     private ObjectOutputStream out;
     private ObjectInputStream in;
-    private volatile boolean isRunning = false;
+    private long clientId = Constants.DEFAULT_CLIENT_ID;
+    private boolean connected = false;
+    private boolean lockedThisRound = false;
+    private boolean isSpectator = false;
+    private boolean isAway = false;
 
-    private User myUser = new User();
-
-    // Swing UI fields
+    // UI components
     private JFrame frame;
-    private CardLayout cardLayout;
-    private JPanel rootPanel;
-
-    // Connect panel
-    private JTextField txtUsername;
+    private JTextField txtUserName;
     private JTextField txtHost;
     private JTextField txtPort;
     private JButton btnConnect;
 
-    // Game control panel
     private JButton btnReady;
-    private JButton btnSkip;
-    private JTextField txtLetter;
-    private JButton btnGuessLetter;
-    private JTextField txtWord;
-    private JButton btnGuessWord;
-    private JButton btnAway;
-    private JButton btnSpectate;
+    private JCheckBox chkAway;
+    private JCheckBox chkSpectator;
+    private JButton btnAddQuestion;
 
-    // Category selection panel
-    private JButton btnMusic, btnSports, btnArts, btnMovies, btnHistory, btnGeography;
+    private JList<String> lstUsers;
+    private DefaultListModel<String> userListModel;
 
-    // Game + chat
-    private JTextArea gameArea;
-    private JTextArea chatArea;
-    private JTextField chatInput;
-    private JButton btnSendChat;
+    private JTextArea txtEvents;
 
-    public Client() {
-        System.out.println("TriviaGuessGame Client (Swing UI) starting...");
-    }
+    private JLabel lblCategory;
+    private JLabel lblQuestion;
+    private JButton[] answerButtons = new JButton[4];
+    private JLabel lblTimer;
 
-    // ========= UI SETUP =========
-
-    public void start() {
-        SwingUtilities.invokeLater(this::initUI);
-    }
-
-    private void initUI() {
-        frame = new JFrame("TriviaGuessGame - nhd5");
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-
-        cardLayout = new CardLayout();
-        rootPanel = new JPanel(cardLayout);
-
-        rootPanel.add(buildConnectPanel(), "connect");
-        rootPanel.add(buildMainPanel(), "main");
-        rootPanel.add(buildCategorySelectionPanel(), "category");
-
-        frame.setContentPane(rootPanel);
-        frame.setSize(900, 600);
-        frame.setLocationRelativeTo(null);
-        frame.setVisible(true);
-
-        cardLayout.show(rootPanel, "connect");
-    }
-
-    private JPanel buildConnectPanel() {
-        JPanel panel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-
-        txtUsername = new JTextField("Player");
-        txtHost = new JTextField("localhost");
-        txtPort = new JTextField("3000");
-        btnConnect = new JButton("Connect");
-
-        btnConnect.setBackground(new Color(255, 170, 51));  // vibrant orange
-        btnConnect.setForeground(Color.WHITE);
-        btnConnect.setBorder(BorderFactory.createLineBorder(new Color(255, 102, 0), 2));
-        btnConnect.setFocusPainted(false);
-
-        txtUsername.setBorder(BorderFactory.createLineBorder(new Color(255, 170, 51)));
-        txtHost.setBorder(BorderFactory.createLineBorder(new Color(255, 170, 51)));
-        txtPort.setBorder(BorderFactory.createLineBorder(new Color(255, 170, 51)));
-
-        int row = 0;
-
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        panel.add(new JLabel("Username:"), gbc);
-        gbc.gridx = 1;
-        panel.add(txtUsername, gbc);
-        row++;
-
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        panel.add(new JLabel("Host:"), gbc);
-        gbc.gridx = 1;
-        panel.add(txtHost, gbc);
-        row++;
-
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        panel.add(new JLabel("Port:"), gbc);
-        gbc.gridx = 1;
-        panel.add(txtPort, gbc);
-        row++;
-
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        gbc.gridwidth = 2;
-        panel.add(btnConnect, gbc);
-
-        btnConnect.addActionListener(e -> onConnectClicked());
-
-        return panel;
-    }
-
-    private JPanel buildCategorySelectionPanel() {
-        JPanel panel = new JPanel(new GridLayout(2, 3, 5, 5));
-
-        btnMusic = createCategoryButton("Music");
-        btnSports = createCategoryButton("Sports");
-        btnArts = createCategoryButton("Arts");
-        btnMovies = createCategoryButton("Movies");
-        btnHistory = createCategoryButton("History");
-        btnGeography = createCategoryButton("Geography");
-
-        panel.add(btnMusic);
-        panel.add(btnSports);
-        panel.add(btnArts);
-        panel.add(btnMovies);
-        panel.add(btnHistory);
-        panel.add(btnGeography);
-
-        return panel;
-    }
-
-    private JButton createCategoryButton(String category) {
-        JButton button = new JButton(category);
-        button.addActionListener(e -> onCategorySelected(category));
-        button.setBackground(new Color(255, 170, 51));  // golden button color
-        button.setForeground(Color.WHITE);
-        button.setFont(new Font("Nineities", Font.PLAIN, 18));  // Use Nineities font for subtitles
-        return button;
-    }
-
-    private JPanel buildMainPanel() {
-        JPanel main = new JPanel(new BorderLayout(5, 5));
-
-        // Game control panel, game events panel, chat area
-        // (same as previous code)
-        // Also apply custom fonts (Visby Bold for titles, Nineities for sub-text)
-        // And style buttons with vibrant colors as before.
-
-        return main;
-    }
-
-    private void onConnectClicked() {
-        String user = txtUsername.getText().trim();
-        String host = txtHost.getText().trim();
-        int port;
-
-        if (user.isEmpty()) {
-            JOptionPane.showMessageDialog(frame, "Please enter a username.", "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
-        try {
-            port = Integer.parseInt(txtPort.getText().trim());
-        } catch (NumberFormatException ex) {
-            JOptionPane.showMessageDialog(frame, "Port must be a number.", "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
-        myUser.setClientName(user);
-
-        CompletableFuture.runAsync(() -> {
-            if (connect(host, port)) {
-                try {
-                    sendClientName(myUser.getClientName());
-                } catch (IOException e) {
-                    appendChat("Failed to send name to server.");
-                }
-                SwingUtilities.invokeLater(() -> {
-                    frame.setTitle("TriviaGuessGame - " + myUser.getClientName());
-                    cardLayout.show(rootPanel, "category");  // Show category selection after connecting
-                });
-            } else {
-                SwingUtilities.invokeLater(() ->
-                        JOptionPane.showMessageDialog(frame, "Could not connect to server.", "Connection Error", JOptionPane.ERROR_MESSAGE)
-                );
-            }
-        });
-    }
-
-    private void onCategorySelected(String category) {
-        try {
-            Payload p = new Payload();
-            p.setPayloadType(PayloadType.MESSAGE);
-            p.setMessage("/startRound " + category);  // Command to start the round with the selected category
-            sendToServer(p);
-        } catch (IOException e) {
-            appendChat("Error selecting category: " + e.getMessage());
-        }
-    }
-
-    private boolean connect(String address, int port) {
-        try {
-            server = new Socket(address, port);
-            out = new ObjectOutputStream(server.getOutputStream());
-            in = new ObjectInputStream(server.getInputStream());
-            isRunning = true;
-            CompletableFuture.runAsync(this::listenToServer);
-            System.out.println("Connected to TriviaGuessGame Server.");
-            appendChat("Connected to server " + address + ":" + port);
-            return true;
-        } catch (IOException e) {
-            appendChat("Failed to connect to server.");
-            return false;
-        }
-    }
-
-    private void appendChat(String msg) {
-        SwingUtilities.invokeLater(() -> {
-            chatArea.append(msg + "\n");
-            chatArea.setCaretPosition(chatArea.getDocument().getLength());
-        });
-    }
-
-    private void sendClientName(String name) throws IOException {
-        ConnectionPayload payload = new ConnectionPayload();
-        payload.setClientName(name);
-        payload.setPayloadType(PayloadType.CLIENT_CONNECT);
-        sendToServer(payload);
-    }
-
-    private void sendToServer(Payload payload) throws IOException {
-        if (server != null && !server.isClosed()) {
-            out.writeObject(payload);
-            out.flush();
-        }
-    }
-
-    private void listenToServer() {
-        try {
-            while (isRunning) {
-                Object obj = in.readObject();
-                if (obj == null) break;
-
-                if (obj instanceof Payload p) {
-                    String msg = p.getMessage();
-                    if (msg != null && !msg.isBlank()) {
-                        appendChat(msg);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            appendChat("Server connection closed.");
-        } finally {
-            close();
-        }
-    }
-
-    private void close() {
-        isRunning = false;
-        try {
-            if (server != null && !server.isClosed()) {
-                server.close();
-            }
-        } catch (IOException ignored) { }
-    }
+    private JCheckBox chkMusic;
+    private JCheckBox chkSports;
+    private JCheckBox chkArts;
+    private JCheckBox chkMovies;
+    private JCheckBox chkHistory;
+    private JCheckBox chkGeography;
 
     public static void main(String[] args) {
-        Client client = new Client();
-        client.start();
+        SwingUtilities.invokeLater(Client::new);
+    }
+
+    public Client() {
+        buildUI();
+    }
+
+    // ====================== UI ======================
+
+    private void buildUI() {
+        frame = new JFrame("TriviaGuessGame - nhd5");
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setLayout(new BorderLayout());
+
+        frame.add(buildConnectionPanel(), BorderLayout.NORTH);
+        frame.add(buildMainCenterPanel(), BorderLayout.CENTER);
+        frame.add(buildEventsPanel(), BorderLayout.EAST);
+
+        frame.setSize(1100, 650);
+        frame.setLocationRelativeTo(null);
+        frame.setVisible(true);
+    }
+
+    // Top: connection
+    private JPanel buildConnectionPanel() {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(new TitledBorder("Connection"));
+
+        GridBagConstraints c = new GridBagConstraints();
+        c.insets = new Insets(2, 4, 2, 4);
+        c.gridy = 0;
+
+        c.gridx = 0;
+        panel.add(new JLabel("Username:"), c);
+        c.gridx = 1;
+        txtUserName = new JTextField("Player", 10);
+        panel.add(txtUserName, c);
+
+        c.gridx = 2;
+        panel.add(new JLabel("Host:"), c);
+        c.gridx = 3;
+        txtHost = new JTextField("localhost", 10);
+        panel.add(txtHost, c);
+
+        c.gridx = 4;
+        panel.add(new JLabel("Port:"), c);
+        c.gridx = 5;
+        txtPort = new JTextField("3000", 5);
+        panel.add(txtPort, c);
+
+        c.gridx = 6;
+        btnConnect = new JButton("Connect");
+        btnConnect.addActionListener(this::onConnectClicked);
+        panel.add(btnConnect, c);
+
+        return panel;
+    }
+
+    // Center = Left (user list / ready / categories), Right (game area)
+    private JPanel buildMainCenterPanel() {
+        JPanel wrapper = new JPanel(new GridLayout(1, 2));
+
+        // LEFT SIDE
+        JPanel left = new JPanel();
+        left.setLayout(new BorderLayout());
+
+        left.add(buildReadyAndOptionsPanel(), BorderLayout.NORTH);
+        left.add(buildUserListPanel(), BorderLayout.CENTER);
+
+        // RIGHT SIDE
+        JPanel right = buildGameAreaPanel();
+
+        wrapper.add(left);
+        wrapper.add(right);
+        return wrapper;
+    }
+
+    private JPanel buildReadyAndOptionsPanel() {
+        JPanel panel = new JPanel(new GridLayout(3, 1));
+        panel.setBorder(new TitledBorder("Ready / Options"));
+
+        // Row 1: Ready + Add Question
+        JPanel row1 = new JPanel();
+        btnReady = new JButton("Mark READY");
+        btnReady.addActionListener(e -> sendChatCommand("/ready"));
+        row1.add(btnReady);
+
+        btnAddQuestion = new JButton("Add Question");
+        btnAddQuestion.addActionListener(e -> showAddQuestionDialog());
+        row1.add(btnAddQuestion);
+        panel.add(row1);
+
+        // Row 2: Away / Spectator
+        JPanel row2 = new JPanel();
+        chkAway = new JCheckBox("Away");
+        chkAway.addActionListener(e -> toggleAway());
+        row2.add(chkAway);
+
+        chkSpectator = new JCheckBox("Spectator");
+        chkSpectator.addActionListener(e -> toggleSpectator());
+        row2.add(chkSpectator);
+        panel.add(row2);
+
+        // Row 3: Categories for host (still sends command even if not host; server validates)
+        JPanel row3 = new JPanel();
+        row3.setBorder(new TitledBorder("Categories (host during Ready Check)"));
+        chkMusic = new JCheckBox("Music", true);
+        chkSports = new JCheckBox("Sports", true);
+        chkArts = new JCheckBox("Arts", true);
+        chkMovies = new JCheckBox("Movies", true);
+        chkHistory = new JCheckBox("History", true);
+        chkGeography = new JCheckBox("Geography", true);
+
+        Action catAction = new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                sendCategorySelection();
+            }
+        };
+        chkMusic.addActionListener(catAction);
+        chkSports.addActionListener(catAction);
+        chkArts.addActionListener(catAction);
+        chkMovies.addActionListener(catAction);
+        chkHistory.addActionListener(catAction);
+        chkGeography.addActionListener(catAction);
+
+        row3.add(chkMusic);
+        row3.add(chkSports);
+        row3.add(chkArts);
+        row3.add(chkMovies);
+        row3.add(chkHistory);
+        row3.add(chkGeography);
+
+        panel.add(row3);
+
+        return panel;
+    }
+
+    private JPanel buildUserListPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(new TitledBorder("User List"));
+
+        userListModel = new DefaultListModel<>();
+        lstUsers = new JList<>(userListModel);
+        panel.add(new JScrollPane(lstUsers), BorderLayout.CENTER);
+
+        JLabel lblHint = new JLabel("Shows username#id, points, and lock/away/spectator states.");
+        lblHint.setFont(lblHint.getFont().deriveFont(Font.ITALIC, 10f));
+        panel.add(lblHint, BorderLayout.SOUTH);
+
+        return panel;
+    }
+
+    private JPanel buildEventsPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(new TitledBorder("Game Events"));
+
+        txtEvents = new JTextArea();
+        txtEvents.setEditable(false);
+        txtEvents.setLineWrap(true);
+        txtEvents.setWrapStyleWord(true);
+
+        panel.add(new JScrollPane(txtEvents), BorderLayout.CENTER);
+
+        return panel;
+    }
+
+    private JPanel buildGameAreaPanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BorderLayout());
+        panel.setBorder(new TitledBorder("Game Area"));
+
+        // Top: category + timer
+        JPanel top = new JPanel(new BorderLayout());
+        lblCategory = new JLabel("Category: -");
+        lblCategory.setFont(lblCategory.getFont().deriveFont(Font.BOLD, 16f));
+        top.add(lblCategory, BorderLayout.WEST);
+
+        lblTimer = new JLabel("Timer: -");
+        lblTimer.setHorizontalAlignment(SwingConstants.RIGHT);
+        top.add(lblTimer, BorderLayout.EAST);
+
+        panel.add(top, BorderLayout.NORTH);
+
+        // Center: question text
+        lblQuestion = new JLabel("Question will appear here.", SwingConstants.CENTER);
+        lblQuestion.setFont(lblQuestion.getFont().deriveFont(Font.PLAIN, 16f));
+        lblQuestion.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        panel.add(lblQuestion, BorderLayout.CENTER);
+
+        // Bottom: answer buttons
+        JPanel bottom = new JPanel(new GridLayout(2, 2, 8, 8));
+        String[] labels = {"A", "B", "C", "D"};
+        for (int i = 0; i < 4; i++) {
+            int index = i;
+            JButton btn = new JButton(labels[i]);
+            btn.addActionListener(e -> onAnswerClicked(index));
+            answerButtons[i] = btn;
+            bottom.add(btn);
+        }
+        panel.add(bottom, BorderLayout.SOUTH);
+
+        return panel;
+    }
+
+    // ====================== Button Handlers ======================
+
+    private void onConnectClicked(ActionEvent e) {
+        if (connected) {
+            appendEvent("Already connected.");
+            return;
+        }
+        String name = txtUserName.getText().trim();
+        String host = txtHost.getText().trim();
+        int port = Integer.parseInt(txtPort.getText().trim());
+
+        try {
+            socket = new Socket(host, port);
+            out = new ObjectOutputStream(socket.getOutputStream());
+            in = new ObjectInputStream(socket.getInputStream());
+            connected = true;
+            appendEvent("Connected to server.");
+
+            ConnectionPayload cp = new ConnectionPayload();
+            cp.setPayloadType(PayloadType.CLIENT_CONNECT);
+            cp.setClientName(name);
+            sendPayload(cp);
+
+            startReaderThread();
+        } catch (Exception ex) {
+            appendEvent("Failed to connect: " + ex.getMessage());
+        }
+    }
+
+    private void onAnswerClicked(int index) {
+        if (!connected) return;
+        if (lockedThisRound) return;
+        if (isSpectator || isAway) return;
+
+        String[] letters = {"A", "B", "C", "D"};
+        String choice = letters[index];
+        sendChatCommand("/answer " + choice);
+        lockedThisRound = true;
+        setAnswerButtonsEnabled(false);
+        answerButtons[index].setBackground(Color.GREEN);
+    }
+
+    private void toggleAway() {
+        if (!connected) return;
+        isAway = chkAway.isSelected();
+        if (isAway) {
+            sendChatCommand("/away");
+        } else {
+            sendChatCommand("/back");
+        }
+    }
+
+    private void toggleSpectator() {
+        if (!connected) return;
+        boolean newValue = chkSpectator.isSelected();
+        if (newValue && !isSpectator) {
+            isSpectator = true;
+            sendChatCommand("/spectate");
+            setAnswerButtonsEnabled(false);
+        }
+    }
+
+    private void sendCategorySelection() {
+        if (!connected) return;
+        // Build comma-separated list
+        ArrayList<String> cats = new ArrayList<>();
+        if (chkMusic.isSelected()) cats.add("music");
+        if (chkSports.isSelected()) cats.add("sports");
+        if (chkArts.isSelected()) cats.add("arts");
+        if (chkMovies.isSelected()) cats.add("movies");
+        if (chkHistory.isSelected()) cats.add("history");
+        if (chkGeography.isSelected()) cats.add("geography");
+
+        if (cats.isEmpty()) {
+            appendEvent("At least one category should be selected.");
+            return;
+        }
+        String joined = String.join(",", cats);
+        sendChatCommand("/categories " + joined);
+    }
+
+    private void showAddQuestionDialog() {
+        if (!connected) {
+            appendEvent("Connect first.");
+            return;
+        }
+
+        String category = JOptionPane.showInputDialog(frame,
+                "Enter category (music/sports/arts/movies/history/geography):",
+                "Add Question", JOptionPane.QUESTION_MESSAGE);
+        if (category == null || category.trim().isEmpty()) return;
+
+        String question = JOptionPane.showInputDialog(frame,
+                "Enter question text:", "Add Question", JOptionPane.QUESTION_MESSAGE);
+        if (question == null || question.trim().isEmpty()) return;
+
+        String a1 = JOptionPane.showInputDialog(frame, "Answer A:", "Add Question", JOptionPane.QUESTION_MESSAGE);
+        String a2 = JOptionPane.showInputDialog(frame, "Answer B:", "Add Question", JOptionPane.QUESTION_MESSAGE);
+        String a3 = JOptionPane.showInputDialog(frame, "Answer C (optional, can leave blank):",
+                "Add Question", JOptionPane.QUESTION_MESSAGE);
+        String a4 = JOptionPane.showInputDialog(frame, "Answer D (optional, can leave blank):",
+                "Add Question", JOptionPane.QUESTION_MESSAGE);
+
+        String correct = JOptionPane.showInputDialog(frame,
+                "Correct answer index (0 = A, 1 = B, 2 = C, 3 = D):",
+                "Add Question", JOptionPane.QUESTION_MESSAGE);
+        if (correct == null || correct.trim().isEmpty()) return;
+
+        // Build /addq line like server expects
+        StringBuilder sb = new StringBuilder();
+        sb.append(category.trim()).append("|")
+                .append(question.trim()).append("|")
+                .append(a1 == null ? "" : a1.trim()).append("|")
+                .append(a2 == null ? "" : a2.trim());
+        if (a3 != null && !a3.trim().isEmpty()) {
+            sb.append("|").append(a3.trim());
+        }
+        if (a4 != null && !a4.trim().isEmpty()) {
+            sb.append("|").append(a4.trim());
+        }
+        sb.append("|").append(correct.trim());
+
+        sendChatCommand("/addq " + sb.toString());
+    }
+
+    // ====================== Networking ======================
+
+    private void startReaderThread() {
+        Thread t = new Thread(() -> {
+            try {
+                while (connected) {
+                    Object obj = in.readObject();
+                    if (obj == null) break;
+
+                    if (obj instanceof PointsPayload) {
+                        handlePointsPayload((PointsPayload) obj);
+                    } else if (obj instanceof QAPayload) {
+                        handleQAPayload((QAPayload) obj);
+                    } else if (obj instanceof UserListPayload) {
+                        handleUserListPayload((UserListPayload) obj);
+                    } else if (obj instanceof Payload) {
+                        handleBasePayload((Payload) obj);
+                    }
+                }
+            } catch (Exception ex) {
+                appendEvent("Disconnected from server.");
+            } finally {
+                connected = false;
+            }
+        });
+        t.start();
+    }
+
+    private void handleBasePayload(Payload p) {
+        if (p.getPayloadType() == PayloadType.CLIENT_ID) {
+            clientId = p.getClientId();
+            appendEvent("Your client id is " + clientId);
+            return;
+        }
+
+        if (p.getPayloadType() == PayloadType.MESSAGE) {
+            appendEvent(p.getMessage());
+            return;
+        }
+
+        if (p.getPayloadType() == PayloadType.TIMER) {
+            lblTimer.setText("Timer: " + p.getMessage() + "s");
+        }
+    }
+
+    private void handlePointsPayload(PointsPayload p) {
+        // Just show the message – the user list will handle ordering/values
+        appendEvent(p.getMessage());
+    }
+
+    private void handleQAPayload(QAPayload qp) {
+        lockedThisRound = false;
+        setAnswerButtonsEnabled(true);
+        resetAnswerButtonColors();
+
+        lblCategory.setText("Category: " + qp.getCategory());
+        lblQuestion.setText("<html><body style='text-align:center;'>" +
+                qp.getQuestionText() + "</body></html>");
+
+        ArrayList<String> answers = qp.getAnswers();
+        for (int i = 0; i < 4; i++) {
+            if (i < answers.size()) {
+                answerButtons[i].setText(answers.get(i));
+                answerButtons[i].setEnabled(true);
+            } else {
+                answerButtons[i].setText("-");
+                answerButtons[i].setEnabled(false);
+            }
+        }
+    }
+
+    private void handleUserListPayload(UserListPayload up) {
+        userListModel.clear();
+        ArrayList<Long> ids = up.getClientIds();
+        ArrayList<String> names = up.getDisplayNames();
+        ArrayList<Integer> pts = up.getPoints();
+        ArrayList<Boolean> locked = up.getLockedIn();
+        ArrayList<Boolean> awayList = up.getAway();
+        ArrayList<Boolean> spectList = up.getSpectator();
+
+        for (int i = 0; i < ids.size(); i++) {
+            StringBuilder sb = new StringBuilder();
+            sb.append(names.get(i)).append(" | pts: ").append(pts.get(i));
+
+            if (Boolean.TRUE.equals(locked.get(i))) {
+                sb.append(" [LOCKED]");
+            }
+            if (Boolean.TRUE.equals(awayList.get(i))) {
+                sb.append(" [AWAY]");
+            }
+            if (Boolean.TRUE.equals(spectList.get(i))) {
+                sb.append(" [SPECTATOR]");
+            }
+
+            userListModel.addElement(sb.toString());
+        }
+    }
+
+    private void sendPayload(Payload p) {
+        try {
+            out.writeObject(p);
+            out.flush();
+        } catch (Exception ex) {
+            appendEvent("Failed to send payload: " + ex.getMessage());
+        }
+    }
+
+    private void sendChatCommand(String commandText) {
+        if (!connected) return;
+        Payload p = new Payload();
+        p.setPayloadType(PayloadType.MESSAGE);
+        p.setClientId(clientId);
+        p.setMessage(commandText);
+        sendPayload(p);
+    }
+
+    // ====================== Helpers ======================
+
+    private void appendEvent(String msg) {
+        txtEvents.append(msg + "\n");
+        txtEvents.setCaretPosition(txtEvents.getDocument().getLength());
+    }
+
+    private void setAnswerButtonsEnabled(boolean enabled) {
+        for (JButton btn : answerButtons) {
+            btn.setEnabled(enabled);
+        }
+    }
+
+    private void resetAnswerButtonColors() {
+        for (JButton btn : answerButtons) {
+            btn.setBackground(null);
+        }
     }
 }
