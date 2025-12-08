@@ -1,29 +1,25 @@
 // UCID: nhd5
 // Date: December 8, 2025
-// Description: UserListPayload - sends synced user list/status to all clients
+// Description: TriviaGuessGame UserListPayload – syncs user list / status to all clients
+// Reference: https://www.w3schools.com/java/java_arraylist.asp
 
 package Common;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 
-public class UserListPayload extends Payload implements Serializable {
+public class UserListPayload extends Payload {
 
-    private ArrayList<Long> clientIds = new ArrayList<>();
-    private ArrayList<String> displayNames = new ArrayList<>();
-    private ArrayList<Integer> points = new ArrayList<>();
-    private ArrayList<Boolean> lockedIn = new ArrayList<>();
-    private ArrayList<Boolean> away = new ArrayList<>();
-    private ArrayList<Boolean> spectator = new ArrayList<>();
+    // One entry at index i belongs to the same user across all lists.
+    private ArrayList<Long> clientIds = new ArrayList<Long>();
+    private ArrayList<String> displayNames = new ArrayList<String>();
+    private ArrayList<Integer> points = new ArrayList<Integer>();
+    private ArrayList<Boolean> lockedIn = new ArrayList<Boolean>();
+    private ArrayList<Boolean> away = new ArrayList<Boolean>();
+    private ArrayList<Boolean> spectator = new ArrayList<Boolean>();
 
-    public UserListPayload() {
-        setPayloadType(PayloadType.USERLIST_UPDATE);
-    }
-
-    // ======================
-    // Add a full user entry
-    // ======================
-    public void addUser(long id, String name, int pts, boolean isLocked, boolean isAway, boolean isSpectator) {
+    // Convenience method used by GameRoom on the server
+    public void addUser(long id, String name, int pts,
+                        boolean isLocked, boolean isAway, boolean isSpectator) {
         clientIds.add(id);
         displayNames.add(name);
         points.add(pts);
@@ -32,10 +28,7 @@ public class UserListPayload extends Payload implements Serializable {
         spectator.add(isSpectator);
     }
 
-    // ======================
-    // Getters
-    // ======================
-
+    // ---- Getters used by Client UI ----
     public ArrayList<Long> getClientIds() {
         return clientIds;
     }
@@ -62,6 +55,8 @@ public class UserListPayload extends Payload implements Serializable {
 
     @Override
     public String toString() {
-        return "UserListPayload (" + clientIds.size() + " users)";
+        // Simple summary for debugging
+        return super.toString()
+                + String.format(" Users[%d]", clientIds.size());
     }
 }
