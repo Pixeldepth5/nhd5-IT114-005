@@ -1,479 +1,762 @@
-package Client;
+package Server;
 
 import Common.*;
-import javax.swing.*;
-import javax.swing.border.*;
-import java.awt.*;
-import java.awt.event.*;
-import java.io.*;
-import java.net.Socket;
-import java.util.ArrayList;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.*;
 
 /**
- * UCID: nhd5
- * Date: December 8, 2025
- * Description: Final Client.java – Updated for Milestone 3, includes:
- *  - Chat-box slash commands
- *  - Ready, Away, Spectate, Categories, Add Question
- *  - Question + Answer button UI
- *  - Timer updates
- *  - User list sync + Points update
- *  - Fonts: Behind the Nineties (title) + Visby CF (subtitle)
- */
-
-public class Client {
-
-    // ------------------- Networking -------------------
-    private Socket socket;
-    private ObjectOutputStream out;
-    private ObjectInputStream in;
-    private long clientId = -1;
-
-    // ------------------- UI Components -------------------
-    JFrame frame;
-
-    JLabel titleLabel;
-    JTextArea chatArea;
-    JTextField chatInput;
-    JTextArea gameEvents;
-    JLabel questionLabel;
-    JLabel categoryLabel;
-    JLabel timerLabel;
-    JButton ansA, ansB, ansC, ansD;
-
-    DefaultListModel<String> userListModel = new DefaultListModel<>();
-    JList<String> userList = new JList<>(userListModel);
-
-    JButton readyBtn;
-    JCheckBox awayChk, spectateChk;
-    JCheckBox geoChk, sciChk, mathChk, histChk;
-
-    JButton addQuestionBtn;
-
-    JTextField usernameField, hostField, portField;
-
-    // ------------------- Internal State -------------------
-    boolean roundActive = false;
-    boolean lockedAnswer = false;
-
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(Client::new);
-    }
-
-    public Client() {
-        buildUI();
-    }
-
-    // =========================================================
-    // UI BUILD
-    // =========================================================
-    private void buildUI() {
-        frame = new JFrame("TriviaGuessGame – nhd5");
-        frame.setSize(1100, 700);
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setLayout(null);
-        frame.getContentPane().setBackground(new Color(245, 240, 255));
-
-        // Title
-        titleLabel = new JLabel("Trivia Guess Game", SwingConstants.CENTER);
-        titleLabel.setBounds(200, 5, 700, 50);
-        try {
-            titleLabel.setFont(new Font("Behind The Nineties", Font.BOLD, 36));
-        } catch (Exception e) {
-            titleLabel.setFont(new Font("Serif", Font.BOLD, 36));
-        }
-        frame.add(titleLabel);
-
-        // ---------- Connection Panel ----------
-        JPanel conn = roundedPanel();
-        conn.setBounds(20, 60, 300, 120);
-        conn.setLayout(null);
-
-        conn.add(label("Username:", 10, 10));
-        usernameField = textField("dev", 100, 10);
-        conn.add(usernameField);
-
-        conn.add(label("Host:", 10, 45));
-        hostField = textField("localhost", 100, 45);
-        conn.add(hostField);
-
-        conn.add(label("Port:", 10, 80));
-        portField = textField("3000", 100, 80);
-        conn.add(portField);
-
-        JButton connectBtn = new JButton("Connect");
-        connectBtn.setBounds(200, 80, 90, 28);
-        connectBtn.addActionListener(e -> connect());
-        conn.add(connectBtn);
-
-        frame.add(conn);
-
-        // ---------- Ready & Options ----------
-        JPanel readyPanel = roundedPanel();
-        readyPanel.setBounds(20, 190, 300, 150);
-        readyPanel.setLayout(null);
-
-        readyBtn = new JButton("READY");
-        readyBtn.setBounds(10, 10, 120, 28);
-        readyBtn.addActionListener(e -> sendCommand("/ready"));
-        readyPanel.add(readyBtn);
-
-        addQuestionBtn = new JButton("Add Question");
-        addQuestionBtn.setBounds(150, 10, 120, 28);
-        addQuestionBtn.addActionListener(e -> openAddQuestionDialog());
-        readyPanel.add(addQuestionBtn);
-
-        awayChk = new JCheckBox("Away");
-        awayChk.setBounds(10, 50, 80, 20);
-        awayChk.addActionListener(e -> sendCommand(awayChk.isSelected() ? "/away" : "/back"));
-        readyPanel.add(awayChk);
-
-        spectateChk = new JCheckBox("Spectator");
-        spectateChk.setBounds(100, 50, 120, 20);
-        spectateChk.addActionListener(e -> sendCommand("/spectate"));
-        readyPanel.add(spectateChk);
-
-        // Categories
-        readyPanel.add(label("Categories:", 10, 80));
-
-        geoChk = new JCheckBox("Geography", true);
-        sciChk = new JCheckBox("Science", true);
-        mathChk = new JCheckBox("Math", true);
-        histChk = new JCheckBox("History", true);
-
-        geoChk.setBounds(10, 100, 100, 20);
-        sciChk.setBounds(110, 100, 80, 20);
-        mathChk.setBounds(10, 125, 100, 20);
-        histChk.setBounds(110, 125, 80, 20);
-
-        ActionListener catUpdate = e -> sendCategoriesToServer();
-        geoChk.addActionListener(catUpdate);
-        sciChk.addActionListener(catUpdate);
-        mathChk.addActionListener(catUpdate);
-        histChk.addActionListener(catUpdate);
-
-        readyPanel.add(geoChk);
-        readyPanel.add(sciChk);
-        readyPanel.add(mathChk);
-        readyPanel.add(histChk);
-
-        frame.add(readyPanel);
-
-        // ---------- Users Panel ----------
-        JPanel usersPanel = roundedPanel();
-        usersPanel.setBounds(20, 350, 300, 300);
-        usersPanel.setLayout(new BorderLayout());
-        usersPanel.add(new JLabel("Users"), BorderLayout.NORTH);
-        usersPanel.add(new JScrollPane(userList), BorderLayout.CENTER);
-
-        frame.add(usersPanel);
-
-        // ---------- Game Area ----------
-        JPanel gamePanel = roundedPanel();
-        gamePanel.setBounds(340, 60, 430, 590);
-        gamePanel.setLayout(null);
-
-        categoryLabel = label("Category: -", 10, 10);
-        gamePanel.add(categoryLabel);
-
-        timerLabel = label("Timer: -", 300, 10);
-        gamePanel.add(timerLabel);
-
-        questionLabel = new JLabel("Question appears here.", SwingConstants.CENTER);
-        questionLabel.setBounds(20, 60, 380, 100);
-        questionLabel.setFont(new Font("Visby CF", Font.PLAIN, 16));
-        gamePanel.add(questionLabel);
-
-        // Answer buttons
-        ansA = answerButton("Answer 1", 40, 200);
-        ansB = answerButton("Answer 2", 230, 200);
-        ansC = answerButton("Answer 3", 40, 240);
-        ansD = answerButton("Answer 4", 230, 240);
-
-        gamePanel.add(ansA);
-        gamePanel.add(ansB);
-        gamePanel.add(ansC);
-        gamePanel.add(ansD);
-
-        frame.add(gamePanel);
-
-        // ---------- Chat ----------
-        JPanel chatPanel = roundedPanel();
-        chatPanel.setBounds(780, 60, 300, 350);
-        chatPanel.setLayout(new BorderLayout());
-
-        chatArea = new JTextArea();
-        chatArea.setEditable(false);
-        chatPanel.add(new JScrollPane(chatArea), BorderLayout.CENTER);
-
-        JPanel inputWrap = new JPanel(new BorderLayout());
-        chatInput = new JTextField();
-        JButton sendBtn = new JButton("Send");
-
-        sendBtn.addActionListener(e -> handleChatSend());
-        chatInput.addActionListener(e -> handleChatSend());
-
-        inputWrap.add(chatInput, BorderLayout.CENTER);
-        inputWrap.add(sendBtn, BorderLayout.EAST);
-
-        chatPanel.add(inputWrap, BorderLayout.SOUTH);
-
-        frame.add(chatPanel);
-
-        // ---------- Game Events ----------
-        JPanel eventsPanel = roundedPanel();
-        eventsPanel.setBounds(780, 420, 300, 230);
-        eventsPanel.setLayout(new BorderLayout());
-        eventsPanel.add(new JLabel("Game Events"), BorderLayout.NORTH);
-
-        gameEvents = new JTextArea();
-        gameEvents.setEditable(false);
-        eventsPanel.add(new JScrollPane(gameEvents), BorderLayout.CENTER);
-
-        frame.add(eventsPanel);
-
-        frame.setVisible(true);
-    }
-
-    // =========================================================
-    // CHAT COMMANDS
-    // =========================================================
-
-    private void handleChatSend() {
-        String text = chatInput.getText().trim();
-        if (text.isEmpty()) return;
-
-        if (text.startsWith("/")) {
-            sendCommand(text);
-        } else {
-            sendChat(text);
-        }
-
-        chatInput.setText("");
-    }
-
-    private void sendChat(String msg) {
-        try {
-            Payload p = new Payload();
-            p.setPayloadType(PayloadType.MESSAGE);
-            p.setMessage(msg);
-            out.writeObject(p);
-            out.flush();
-        } catch (Exception ignored) {}
-    }
-
-    private void sendCommand(String cmd) {
-        try {
-            Payload p = new Payload();
-            p.setPayloadType(PayloadType.COMMAND);
-            p.setMessage(cmd);
-            out.writeObject(p);
-            out.flush();
-        } catch (Exception ignored) {}
-    }
-
-    private void sendCategoriesToServer() {
-        String csv = "";
-        if (geoChk.isSelected()) csv += "geography,";
-        if (sciChk.isSelected()) csv += "science,";
-        if (mathChk.isSelected()) csv += "math,";
-        if (histChk.isSelected()) csv += "history,";
-
-        sendCommand("/categories " + csv);
-    }
-
-    // =========================================================
-    // ANSWER BUTTON LOGIC
-    // =========================================================
-
-    private JButton answerButton(String text, int x, int y) {
-        JButton b = new JButton(text);
-        b.setBounds(x, y, 150, 32);
-        b.addActionListener(e -> {
-            if (!roundActive || lockedAnswer) return;
-
-            int index = switch (b.getText()) {
-                case "A", "Answer 1" -> 0;
-                case "B", "Answer 2" -> 1;
-                case "C", "Answer 3" -> 2;
-                default -> 3;
-            };
-
-            sendCommand("/answer " + index);
-            lockedAnswer = true;
-            disableAnswerButtons();
-            b.setBackground(new Color(180, 200, 255));
-        });
-        return b;
-    }
-
-    private void disableAnswerButtons() {
-        ansA.setEnabled(false);
-        ansB.setEnabled(false);
-        ansC.setEnabled(false);
-        ansD.setEnabled(false);
-    }
-
-    private void enableAnswerButtons() {
-        ansA.setEnabled(true);
-        ansB.setEnabled(true);
-        ansC.setEnabled(true);
-        ansD.setEnabled(true);
-
-        ansA.setBackground(null);
-        ansB.setBackground(null);
-        ansC.setBackground(null);
-        ansD.setBackground(null);
-    }
-
-    // =========================================================
-    // CONNECTION
-    // =========================================================
-
-    private void connect() {
-        try {
-            socket = new Socket(hostField.getText().trim(),
-                                Integer.parseInt(portField.getText().trim()));
-            out = new ObjectOutputStream(socket.getOutputStream());
-            in = new ObjectInputStream(socket.getInputStream());
-
-            // Send connect payload
-            ConnectPayload c = new ConnectPayload();
-            c.setPayloadType(PayloadType.CONNECT);
-            c.setClientName(usernameField.getText().trim());
-            out.writeObject(c);
-            out.flush();
-
-            new Thread(this::listen).start();
-
-        } catch (Exception e) {
-            appendChat("Connection failed: " + e.getMessage());
+
+* UCID: nhd5
+* Date: December 8, 2025
+*
+* TriviaGuessGame GameRoom – server-side game logic (MS2 + MS3).
+* * Extends Room; all non-command text is treated as chat via super.handleMessage.
+* * Parses slash commands sent by Client:
+* ```
+   /ready
+  ```
+* ```
+   /away, /back
+  ```
+* ```
+   /spectate
+  ```
+* ```
+   /categories cat1,cat2,...
+  ```
+* ```
+   /answer indexOrLetter
+  ```
+* ```
+   /addq category|question|a1|a2|a3|a4|correctIndex
+  ```
+* * Manages:
+* ```
+   • Ready check & session start
+  ```
+* ```
+   • Away / Spectator
+  ```
+* ```
+   • Categories filter
+  ```
+* ```
+   • Question loader (Server/questions.txt)
+  ```
+* ```
+   • Round timer + TIMER payload
+  ```
+* ```
+   • Points + POINTS_UPDATE payload
+  ```
+* ```
+   • User list sync + USER_LIST payload
+  ```
+*
+* File format for questions.txt (one question per line):
+* ```
+   category|question text|answer A|answer B|answer C|answer D|correctIndex
+  ```
+* where correctIndex is 0 for A, 1 for B, 2 for C, 3 for D.
+  */
+
+public class GameRoom extends Room {
+
+```
+// -------- Question POJO --------
+private static class Question {
+    String category;
+    String text;
+    ArrayList<String> answers = new ArrayList<>();
+    int correctIndex;
+}
+
+// -------- Game settings --------
+private static final int MAX_ROUNDS = 5;
+private static final int ROUND_SECONDS = 20;
+
+// Question bank
+private final ArrayList<Question> questionPool = new ArrayList<>();
+private final Random rng = new Random();
+
+// Per-player state
+private final Map<Long, Integer> points = new HashMap<>();
+private final Map<Long, Boolean> ready = new HashMap<>();
+private final Map<Long, Boolean> away = new HashMap<>();
+private final Map<Long, Boolean> spectator = new HashMap<>();
+private final Map<Long, Boolean> lockedThisRound = new HashMap<>();
+
+// Session state
+private boolean sessionActive = false;
+private int currentRound = 0;
+private Question currentQuestion = null;
+private final ArrayList<Long> correctOrder = new ArrayList<>();
+
+private int timerSecondsLeft = 0;
+private Thread timerThread = null;
+
+private long hostClientId = Constants.DEFAULT_CLIENT_ID;
+
+// Categories enabled by host during ready check
+private final Set<String> enabledCategories = new HashSet<>();
+
+public GameRoom(String name) {
+    super(name);
+
+    // Start with all common categories enabled
+    enabledCategories.add("geography");
+    enabledCategories.add("science");
+    enabledCategories.add("math");
+    enabledCategories.add("history");
+    enabledCategories.add("movies");
+    enabledCategories.add("sports");
+
+    loadQuestionsFromFile();
+}
+
+// =====================================================================
+// Client management
+// =====================================================================
+
+@Override
+protected synchronized void addClient(ServerThread client) {
+    super.addClient(client); // Room will broadcast join message
+
+    long id = client.getClientId();
+    points.putIfAbsent(id, 0);
+    ready.put(id, false);
+    away.putIfAbsent(id, false);
+    spectator.putIfAbsent(id, false);
+    lockedThisRound.put(id, false);
+
+    // If a game is in progress, new players come in as spectators
+    if (sessionActive) {
+        spectator.put(id, true);
+        client.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                "Game already in progress – you joined as a spectator.");
+
+        // Send current question so they see the board
+        if (currentQuestion != null) {
+            sendQuestionToSingleClient(client);
         }
     }
 
-    // =========================================================
-    // LISTENER LOOP
-    // =========================================================
-    private void listen() {
-        try {
-            while (true) {
-                Object obj = in.readObject();
+    sendUserListToAll();
+}
 
-                if (obj instanceof Payload p) {
-                    switch (p.getPayloadType()) {
-                        case CLIENT_ID -> {
-                            this.clientId = p.getClientId();
-                        }
-                        case MESSAGE -> appendChat(p.getMessage());
-                        case SERVER_MESSAGE -> appendEvent(p.getMessage());
+@Override
+protected synchronized void handleDisconnect(ServerThread client) {
+    long id = client.getClientId();
 
-                        case QUESTION -> {
-                            handleQuestion((QAPayload)p);
-                        }
-                        case USER_LIST -> {
-                            updateUserList((UserListPayload)p);
-                        }
-                        case POINTS_UPDATE -> {
-                            appendEvent(((PointsPayload)p).getMessage());
-                        }
-                        case TIMER -> {
-                            timerLabel.setText("Timer: " + p.getNumber());
-                        }
-                    }
-                }
+    points.remove(id);
+    ready.remove(id);
+    away.remove(id);
+    spectator.remove(id);
+    lockedThisRound.remove(id);
+    correctOrder.remove(id);
+
+    super.handleDisconnect(client); // broadcast "left room"
+    sendUserListToAll();
+}
+
+// =====================================================================
+// Message / command handling
+// =====================================================================
+
+@Override
+protected synchronized void handleMessage(ServerThread sender, String msg) {
+    if (msg == null) return;
+    String text = msg.trim();
+    if (text.isEmpty()) return;
+
+    // Commands always start with "/"
+    if (text.startsWith(Constants.COMMAND_TRIGGER)) {
+        String noSlash = text.substring(1);
+        String[] parts = noSlash.split(Constants.SINGLE_SPACE, 2);
+        String command = parts[0].toLowerCase();
+        String args = (parts.length > 1) ? parts[1].trim() : "";
+
+        switch (command) {
+            case "ready"      -> handleReady(sender);
+            case "away"       -> handleAway(sender, true);
+            case "back"       -> handleAway(sender, false);
+            case "spectate"   -> handleSpectate(sender);
+            case "categories" -> handleCategories(sender, args);
+            case "answer"     -> handleAnswer(sender, args);
+            case "addq"       -> handleAddQuestion(sender, args);
+            default -> sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                    "Unknown command: " + text);
+        }
+        return;
+    }
+
+    // Non-command text is chat; Room handles [CHAT] prefix
+    super.handleMessage(sender, text);
+}
+
+// =====================================================================
+// Ready / session control
+// =====================================================================
+
+private void handleReady(ServerThread sender) {
+    long id = sender.getClientId();
+
+    if (spectator.getOrDefault(id, false)) {
+        sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                "Spectators cannot ready up.");
+        return;
+    }
+
+    ready.put(id, true);
+
+    if (hostClientId == Constants.DEFAULT_CLIENT_ID) {
+        hostClientId = id;
+        broadcast(null, sender.getDisplayName() + " is the session host.");
+    }
+
+    broadcast(null, sender.getDisplayName() + " is ready.");
+    sendUserListToAll();
+
+    if (!sessionActive && allActivePlayersReady()) {
+        startSession();
+    }
+}
+
+/** true if all non-away, non-spectator players are ready and at least one exists */
+private boolean allActivePlayersReady() {
+    boolean anyActive = false;
+    for (ServerThread st : getClients()) {
+        long id = st.getClientId();
+        if (spectator.getOrDefault(id, false)) continue;
+        if (away.getOrDefault(id, false)) continue;
+
+        anyActive = true;
+        if (!ready.getOrDefault(id, false)) {
+            return false;
+        }
+    }
+    return anyActive;
+}
+
+private synchronized void startSession() {
+    loadQuestionsFromFile(); // fresh question pool
+    if (questionPool.isEmpty()) {
+        broadcast(null, "No questions available. Game cannot start.");
+        return;
+    }
+
+    sessionActive = true;
+    currentRound = 0;
+    broadcast(null, "=== Trivia Session Starting ===");
+
+    for (Long id : ready.keySet()) {
+        ready.put(id, false);
+    }
+    for (Long id : lockedThisRound.keySet()) {
+        lockedThisRound.put(id, false);
+    }
+
+    startNextRound();
+}
+
+private synchronized void endSession() {
+    sessionActive = false;
+    stopTimer();
+
+    broadcast(null, "=== GAME OVER ===");
+    showScoreboard("Final scores:");
+
+    // Reset points for next game
+    for (Long id : points.keySet()) {
+        points.put(id, 0);
+    }
+    currentQuestion = null;
+    correctOrder.clear();
+    timerSecondsLeft = 0;
+
+    sendUserListToAll();
+    broadcast(null, "Type /ready to play again.");
+}
+
+private synchronized void startNextRound() {
+    currentRound++;
+    correctOrder.clear();
+    for (Long id : lockedThisRound.keySet()) {
+        lockedThisRound.put(id, false);
+    }
+
+    if (currentRound > MAX_ROUNDS) {
+        endSession();
+        return;
+    }
+
+    currentQuestion = drawRandomQuestion();
+    if (currentQuestion == null) {
+        broadcast(null, "No more questions available for selected categories.");
+        endSession();
+        return;
+    }
+
+    broadcast(null, "Round " + currentRound + " of " + MAX_ROUNDS);
+    sendQuestionToAll();
+    sendUserListToAll();
+    startTimer();
+}
+
+// =====================================================================
+// Categories / away / spectator
+// =====================================================================
+
+private void handleCategories(ServerThread sender, String csv) {
+    if (sessionActive) {
+        sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                "Categories can be changed only before the game starts.");
+        return;
+    }
+    if (sender.getClientId() != hostClientId) {
+        sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                "Only the session host can change categories.");
+        return;
+    }
+
+    enabledCategories.clear();
+    if (csv == null || csv.trim().isEmpty()) {
+        sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                "No categories provided. Keeping previous selection: " + enabledCategories);
+        return;
+    }
+
+    String[] parts = csv.split(",");
+    for (String p : parts) {
+        String cat = p.trim().toLowerCase();
+        if (!cat.isEmpty()) {
+            enabledCategories.add(cat);
+        }
+    }
+
+    broadcast(null, "Host set categories to: " + enabledCategories);
+}
+
+private void handleAway(ServerThread sender, boolean isAway) {
+    long id = sender.getClientId();
+    away.put(id, isAway);
+
+    if (isAway) {
+        broadcast(null, sender.getDisplayName() + " is now AWAY.");
+    } else {
+        broadcast(null, sender.getDisplayName() + " is back.");
+    }
+
+    sendUserListToAll();
+}
+
+private void handleSpectate(ServerThread sender) {
+    long id = sender.getClientId();
+    spectator.put(id, true);
+    ready.put(id, false); // spectators do not participate
+    broadcast(null, sender.getDisplayName() + " joined as a spectator.");
+    sendUserListToAll();
+}
+
+// =====================================================================
+// Question loading & selection
+// =====================================================================
+
+private void loadQuestionsFromFile() {
+    questionPool.clear();
+
+    // Primary: Server/questions.txt
+    File f = new File("Server/questions.txt");
+    if (!f.exists()) {
+        // Fallback: questions.txt in project root
+        f = new File("questions.txt");
+    }
+
+    if (!f.exists()) {
+        addBuiltInSampleQuestions();
+        return;
+    }
+
+    try (BufferedReader br = new BufferedReader(new FileReader(f))) {
+        String line;
+        while ((line = br.readLine()) != null) {
+            line = line.trim();
+            if (line.isEmpty() || line.startsWith("#")) continue;
+
+            Question q = parseQuestionLine(line);
+            if (q != null) {
+                questionPool.add(q);
             }
-        } catch (Exception e) {
-            appendEvent("Disconnected from server.");
+        }
+    } catch (IOException e) {
+        addBuiltInSampleQuestions();
+    }
+}
+
+private Question parseQuestionLine(String line) {
+    String[] parts = line.split("\\|");
+    if (parts.length < 7) {
+        return null;
+    }
+
+    Question q = new Question();
+    q.category = parts[0].trim().toLowerCase();
+    q.text = parts[1].trim();
+    for (int i = 2; i <= 5; i++) {
+        q.answers.add(parts[i].trim());
+    }
+    try {
+        q.correctIndex = Integer.parseInt(parts[6].trim());
+    } catch (NumberFormatException e) {
+        q.correctIndex = 0;
+    }
+    if (q.correctIndex < 0 || q.correctIndex >= q.answers.size()) {
+        q.correctIndex = 0;
+    }
+    return q;
+}
+
+/** Fallback questions if no file is found */
+private void addBuiltInSampleQuestions() {
+    Question q1 = new Question();
+    q1.category = "geography";
+    q1.text = "What is the capital of France?";
+    q1.answers.addAll(Arrays.asList("Paris", "London", "Berlin", "Madrid"));
+    q1.correctIndex = 0;
+    questionPool.add(q1);
+
+    Question q2 = new Question();
+    q2.category = "science";
+    q2.text = "What planet is known as the Red Planet?";
+    q2.answers.addAll(Arrays.asList("Venus", "Mars", "Jupiter", "Saturn"));
+    q2.correctIndex = 1;
+    questionPool.add(q2);
+
+    Question q3 = new Question();
+    q3.category = "math";
+    q3.text = "What is 7 × 8?";
+    q3.answers.addAll(Arrays.asList("54", "56", "63", "49"));
+    q3.correctIndex = 1;
+    questionPool.add(q3);
+
+    Question q4 = new Question();
+    q4.category = "history";
+    q4.text = "Who was the first President of the United States?";
+    q4.answers.addAll(Arrays.asList("George Washington", "Abraham Lincoln",
+            "John Adams", "Thomas Jefferson"));
+    q4.correctIndex = 0;
+    questionPool.add(q4);
+
+    Question q5 = new Question();
+    q5.category = "movies";
+    q5.text = "In which movie does the quote 'I'll be back' appear?";
+    q5.answers.addAll(Arrays.asList("Terminator", "Die Hard", "Rocky", "Predator"));
+    q5.correctIndex = 0;
+    questionPool.add(q5);
+
+    Question q6 = new Question();
+    q6.category = "sports";
+    q6.text = "How many players are on the field for one soccer team during play?";
+    q6.answers.addAll(Arrays.asList("9", "10", "11", "12"));
+    q6.correctIndex = 2;
+    questionPool.add(q6);
+}
+
+/** Draws & removes a random question from the pool, respecting enabledCategories if possible */
+private Question drawRandomQuestion() {
+    if (questionPool.isEmpty()) return null;
+
+    ArrayList<Integer> eligible = new ArrayList<>();
+    for (int i = 0; i < questionPool.size(); i++) {
+        Question q = questionPool.get(i);
+        if (enabledCategories.isEmpty() || enabledCategories.contains(q.category)) {
+            eligible.add(i);
         }
     }
 
-    // =========================================================
-    // UI UPDATES FROM SERVER
-    // =========================================================
+    if (eligible.isEmpty()) {
+        int idx = rng.nextInt(questionPool.size());
+        return questionPool.remove(idx);
+    } else {
+        int poolIndex = eligible.get(rng.nextInt(eligible.size()));
+        return questionPool.remove(poolIndex);
+    }
+}
 
-    private void handleQuestion(QAPayload q) {
-        categoryLabel.setText("Category: " + q.getCategory());
-        questionLabel.setText("<html><div style='text-align:center;'>" +
-                q.getQuestion() + "</div></html>");
+// =====================================================================
+// Answer handling
+// =====================================================================
 
-        ArrayList<String> ans = q.getAnswers();
-        ansA.setText(ans.get(0));
-        ansB.setText(ans.get(1));
-        ansC.setText(ans.get(2));
-        ansD.setText(ans.get(3));
-
-        roundActive = true;
-        lockedAnswer = false;
-        enableAnswerButtons();
+private void handleAnswer(ServerThread sender, String arg) {
+    if (!sessionActive || currentQuestion == null) {
+        sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                "No active round – wait for the next question.");
+        return;
     }
 
-    private void updateUserList(UserListPayload list) {
-        userListModel.clear();
-        for (String u : list.getUsers()) userListModel.addElement(u);
+    long id = sender.getClientId();
+    if (spectator.getOrDefault(id, false)) {
+        sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                "Spectators cannot answer.");
+        return;
+    }
+    if (away.getOrDefault(id, false)) {
+        sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                "You are marked AWAY. Use /back to participate again.");
+        return;
+    }
+    if (lockedThisRound.getOrDefault(id, false)) {
+        sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                "You already locked in this round.");
+        return;
     }
 
-    // =========================================================
-    // UTIL UI HELPERS
-    // =========================================================
-
-    private JPanel roundedPanel() {
-        JPanel p = new JPanel();
-        p.setBackground(new Color(250, 245, 255));
-        p.setBorder(new LineBorder(new Color(180, 160, 220), 2, true));
-        return p;
+    int index = mapChoiceToIndex(arg);
+    if (index < 0 || index >= currentQuestion.answers.size()) {
+        sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                "Invalid answer. Use 0–3 or A–D.");
+        return;
     }
 
-    private JLabel label(String text, int x, int y) {
-        JLabel l = new JLabel(text);
-        l.setBounds(x, y, 200, 20);
-        return l;
+    boolean correct = (index == currentQuestion.correctIndex);
+    lockedThisRound.put(id, true);
+
+    broadcast(null, sender.getDisplayName() +
+            (correct ? " locked in the CORRECT answer!" :
+                    " locked in the WRONG answer."));
+
+    if (correct) {
+        correctOrder.add(id);
     }
 
-    private JTextField textField(String val, int x, int y) {
-        JTextField t = new JTextField(val);
-        t.setBounds(x, y, 100, 22);
-        return t;
+    sendUserListToAll(); // update locked icon
+
+    if (allActivePlayersLocked()) {
+        endRound("All active players locked in.");
     }
+}
 
-    private void appendChat(String text) {
-        chatArea.append(text + "\n");
+/** maps 0–3 or A–D to answer index */
+private int mapChoiceToIndex(String arg) {
+    if (arg == null || arg.isEmpty()) return -1;
+    char c = Character.toUpperCase(arg.trim().charAt(0));
+    if (c >= '0' && c <= '3') return c - '0';
+    if (c == 'A') return 0;
+    if (c == 'B') return 1;
+    if (c == 'C') return 2;
+    if (c == 'D') return 3;
+    return -1;
+}
+
+private boolean allActivePlayersLocked() {
+    for (ServerThread st : getClients()) {
+        long id = st.getClientId();
+        if (spectator.getOrDefault(id, false)) continue;
+        if (away.getOrDefault(id, false)) continue;
+        if (!lockedThisRound.getOrDefault(id, false)) return false;
     }
-    private void appendEvent(String text) {
-        gameEvents.append(text + "\n");
+    return true;
+}
+
+private synchronized void endRound(String reason) {
+    broadcast(null, "Round ended: " + reason);
+    showCorrectAnswer();
+    awardPoints();
+    showScoreboard("Current scores:");
+    sendUserListToAll();
+    stopTimer();
+
+    if (currentRound >= MAX_ROUNDS) {
+        endSession();
+    } else {
+        startNextRound();
     }
+}
 
-    // =========================================================
-    // ADD QUESTION POPUP
-    // =========================================================
-    private void openAddQuestionDialog() {
-        JTextField cat = new JTextField();
-        JTextField q = new JTextField();
-        JTextField a1 = new JTextField();
-        JTextField a2 = new JTextField();
-        JTextField a3 = new JTextField();
-        JTextField a4 = new JTextField();
-        JTextField correct = new JTextField();
+private void showCorrectAnswer() {
+    if (currentQuestion == null) return;
+    int idx = currentQuestion.correctIndex;
+    if (idx < 0 || idx >= currentQuestion.answers.size()) return;
 
-        Object[] msg = {
-                "Category:", cat,
-                "Question:", q,
-                "Answer 1:", a1,
-                "Answer 2:", a2,
-                "Answer 3:", a3,
-                "Answer 4:", a4,
-                "Correct Index (0-3):", correct
-        };
+    char letter = (char) ('A' + idx);
+    String answerText = currentQuestion.answers.get(idx);
+    broadcast(null, "Correct answer: " + letter + " – " + answerText);
+}
 
-        int opt = JOptionPane.showConfirmDialog(frame, msg,
-                "Add Question", JOptionPane.OK_CANCEL_OPTION);
+private void awardPoints() {
+    // First correct: 10, second: 7, third: 5, rest: 3 (then 1)
+    int[] awards = new int[]{10, 7, 5, 3};
 
-        if (opt == JOptionPane.OK_OPTION) {
-            String line = cat.getText() + "|" + q.getText() + "|" +
-                    a1.getText() + "|" + a2.getText() + "|" +
-                    a3.getText() + "|" + a4.getText() + "|" +
-                    correct.getText();
+    for (int i = 0; i < correctOrder.size(); i++) {
+        long id = correctOrder.get(i);
+        int award = (i < awards.length) ? awards[i] : 1;
 
-            sendCommand("/addq " + line);
+        int newTotal = points.getOrDefault(id, 0) + award;
+        points.put(id, newTotal);
+
+        ServerThread st = clients.get(id);
+        String name = (st != null) ? st.getDisplayName() : ("Player#" + id);
+
+        broadcast(null, name + " earned " + award + " points (total " + newTotal + ").");
+
+        PointsPayload pp = new PointsPayload();
+        pp.setPayloadType(PayloadType.POINTS_UPDATE);
+        pp.setClientId(Constants.DEFAULT_CLIENT_ID);
+        pp.setTargetClientId(id);
+        pp.setPoints(newTotal);
+        pp.setMessage(name + " now has " + newTotal + " points.");
+
+        for (ServerThread client : getClients()) {
+            client.sendPayload(pp);
         }
     }
+}
+
+private void showScoreboard(String header) {
+    broadcast(null, header);
+
+    ArrayList<Map.Entry<Long, Integer>> entries =
+            new ArrayList<>(points.entrySet());
+    entries.sort((a, b) -> Integer.compare(b.getValue(), a.getValue()));
+
+    for (Map.Entry<Long, Integer> e : entries) {
+        long id = e.getKey();
+        int pts = e.getValue();
+        ServerThread st = clients.get(id);
+        String name = (st != null) ? st.getDisplayName() : ("Player#" + id);
+        broadcast(null, " • " + name + " – " + pts + " pts");
+    }
+}
+
+// =====================================================================
+// User list sync
+// =====================================================================
+
+private void sendUserListToAll() {
+    UserListPayload up = new UserListPayload();
+    up.setPayloadType(PayloadType.USER_LIST);
+    up.setClientId(Constants.DEFAULT_CLIENT_ID);
+
+    for (ServerThread st : getClients()) {
+        long id = st.getClientId();
+        String name = st.getDisplayName();
+        int pts = points.getOrDefault(id, 0);
+        boolean locked = lockedThisRound.getOrDefault(id, false);
+        boolean isAway = away.getOrDefault(id, false);
+        boolean isSpec = spectator.getOrDefault(id, false);
+
+        up.addUser(id, name, pts, locked, isAway, isSpec);
+    }
+
+    for (ServerThread st : getClients()) {
+        st.sendPayload(up);
+    }
+}
+
+private void sendQuestionToAll() {
+    if (currentQuestion == null) return;
+
+    QAPayload qa = new QAPayload();
+    qa.setPayloadType(PayloadType.QUESTION);
+    qa.setClientId(Constants.DEFAULT_CLIENT_ID);
+    qa.setCategory(currentQuestion.category);
+    qa.setQuestionText(currentQuestion.text);
+    qa.getAnswers().clear();
+    qa.getAnswers().addAll(currentQuestion.answers);
+
+    for (ServerThread st : getClients()) {
+        st.sendPayload(qa);
+    }
+}
+
+private void sendQuestionToSingleClient(ServerThread client) {
+    if (currentQuestion == null || client == null) return;
+
+    QAPayload qa = new QAPayload();
+    qa.setPayloadType(PayloadType.QUESTION);
+    qa.setClientId(Constants.DEFAULT_CLIENT_ID);
+    qa.setCategory(currentQuestion.category);
+    qa.setQuestionText(currentQuestion.text);
+    qa.getAnswers().clear();
+    qa.getAnswers().addAll(currentQuestion.answers);
+
+    client.sendPayload(qa);
+}
+
+// =====================================================================
+// Timer
+// =====================================================================
+
+private void startTimer() {
+    stopTimer(); // just in case
+
+    timerSecondsLeft = ROUND_SECONDS;
+
+    timerThread = new Thread(() -> {
+        while (timerSecondsLeft >= 0 && sessionActive && currentQuestion != null) {
+            sendTimerUpdate(timerSecondsLeft);
+
+            if (timerSecondsLeft == 0) {
+                endRound("Time's up!");
+                break;
+            }
+
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                break;
+            }
+            timerSecondsLeft--;
+        }
+    });
+    timerThread.setDaemon(true);
+    timerThread.start();
+}
+
+private void stopTimer() {
+    if (timerThread != null && timerThread.isAlive()) {
+        timerThread.interrupt();
+    }
+    timerThread = null;
+}
+
+private void sendTimerUpdate(int seconds) {
+    Payload p = new Payload();
+    p.setPayloadType(PayloadType.TIMER);
+    p.setClientId(Constants.DEFAULT_CLIENT_ID);
+    p.setMessage(Integer.toString(seconds));
+
+    for (ServerThread st : getClients()) {
+        st.sendPayload(p);
+    }
+}
+
+// =====================================================================
+// /addq – players adding questions at runtime
+// =====================================================================
+
+private void handleAddQuestion(ServerThread sender, String args) {
+    if (sessionActive) {
+        sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                "You can only add questions while no game is running.");
+        return;
+    }
+
+    Question q = parseQuestionLine(args);
+    if (q == null) {
+        sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                "Invalid /addq format. Use category|question|a1|a2|a3|a4|correctIndex");
+        return;
+    }
+
+    questionPool.add(q);
+    broadcast(null, "New question added in '" + q.category +
+            "' by " + sender.getDisplayName() + ".");
+    // (Optional) append to file – skipped to keep things simple
+}
+```
+
 }
