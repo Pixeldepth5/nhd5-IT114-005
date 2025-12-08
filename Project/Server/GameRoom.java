@@ -1,599 +1,479 @@
- // UCID: nhd5
-// Date: December 8, 2025
-// Description: TriviaGuessGame GameRoom (MS2 + MS3 fully implemented)
-//  - Uses classic payload names: QUESTION, USER_LIST, TIMER, POINTS_UPDATE
-//  - Supports: Ready, Away, Spectator, Categories, Add Question, 20s Timer,
-//             Scoring system, Scoreboard, Lock-in tracking.
-//  - Reads questions from questions.txt (format: category|question|a|b|c|d|correctIndex)
-//  - If missing, generates sample questions.
-//
-// References (Beginner friendly):
-//  - https://www.w3schools.com/java/java_arraylist.asp
-//  - https://www.w3schools.com/java/java_files_read.asp
-//  - https://www.w3schools.com/java/java_hashmap.asp
-//  - https://www.w3schools.com/java/java_random.asp
+package Client;
 
-package Server;
-
-import Common.Constants;
-import Common.Payload;
-import Common.PayloadType;
-import Common.PointsPayload;
-import Common.QAPayload;
-import Common.UserListPayload;
+import Common.*;
+import javax.swing.*;
+import javax.swing.border.*;
+import java.awt.*;
+import java.awt.event.*;
 import java.io.*;
-import java.util.*;
+import java.net.Socket;
+import java.util.ArrayList;
 
-public class GameRoom extends Room {
+/**
+ * UCID: nhd5
+ * Date: December 8, 2025
+ * Description: Final Client.java – Updated for Milestone 3, includes:
+ *  - Chat-box slash commands
+ *  - Ready, Away, Spectate, Categories, Add Question
+ *  - Question + Answer button UI
+ *  - Timer updates
+ *  - User list sync + Points update
+ *  - Fonts: Behind the Nineties (title) + Visby CF (subtitle)
+ */
 
-    // ======================= Question POJO =======================
-    private static class Question {
-        String category;
-        String text;
-        ArrayList<String> answers = new ArrayList<>();
-        int correctIndex;
+public class Client {
+
+    // ------------------- Networking -------------------
+    private Socket socket;
+    private ObjectOutputStream out;
+    private ObjectInputStream in;
+    private long clientId = -1;
+
+    // ------------------- UI Components -------------------
+    JFrame frame;
+
+    JLabel titleLabel;
+    JTextArea chatArea;
+    JTextField chatInput;
+    JTextArea gameEvents;
+    JLabel questionLabel;
+    JLabel categoryLabel;
+    JLabel timerLabel;
+    JButton ansA, ansB, ansC, ansD;
+
+    DefaultListModel<String> userListModel = new DefaultListModel<>();
+    JList<String> userList = new JList<>(userListModel);
+
+    JButton readyBtn;
+    JCheckBox awayChk, spectateChk;
+    JCheckBox geoChk, sciChk, mathChk, histChk;
+
+    JButton addQuestionBtn;
+
+    JTextField usernameField, hostField, portField;
+
+    // ------------------- Internal State -------------------
+    boolean roundActive = false;
+    boolean lockedAnswer = false;
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(Client::new);
     }
 
-    // ======================= Game Settings ========================
-    private static final int MAX_ROUNDS = 5;
-    private static final int ROUND_SECONDS = 20;
-
-    // ======================= Data Stores ==========================
-    private final ArrayList<Question> questions = new ArrayList<>();
-    private final Random random = new Random();
-
-    private final Map<Long, Integer> points = new HashMap<>();
-    private final Map<Long, Boolean> ready = new HashMap<>();
-    private final Map<Long, Boolean> away = new HashMap<>();
-    private final Map<Long, Boolean> spectator = new HashMap<>();
-    private final Map<Long, Boolean> lockedThisRound = new HashMap<>();
-
-    private boolean sessionActive = false;
-    private int currentRound = 0;
-    private Question currentQuestion;
-    private ArrayList<Long> correctOrder = new ArrayList<>();
-
-    private int timerSecondsLeft = 0;
-    private Thread timerThread;
-
-    private long hostClientId = Constants.DEFAULT_CLIENT_ID;
-    private final Set<String> enabledCategories = new HashSet<>();
-
-    // ==============================================================
-    // Constructor
-    // ==============================================================
-    public GameRoom(String name) {
-        super(name);
-
-        enabledCategories.add("geography");
-        enabledCategories.add("science");
-        enabledCategories.add("math");
-        enabledCategories.add("history");
-        enabledCategories.add("movies");
-        enabledCategories.add("sports");
-
-        loadQuestionsFromFile();
+    public Client() {
+        buildUI();
     }
 
-    // ==============================================================
-    // Client Join / Disconnect
-    // ==============================================================
-    @Override
-    protected synchronized void addClient(ServerThread client) {
-        super.addClient(client);
+    // =========================================================
+    // UI BUILD
+    // =========================================================
+    private void buildUI() {
+        frame = new JFrame("TriviaGuessGame – nhd5");
+        frame.setSize(1100, 700);
+        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setLayout(null);
+        frame.getContentPane().setBackground(new Color(245, 240, 255));
 
-        long id = client.getClientId();
-        points.putIfAbsent(id, 0);
-        ready.put(id, false);
-        away.put(id, false);
-        spectator.put(id, false);
-        lockedThisRound.put(id, false);
-
-        if (sessionActive) {
-            spectator.put(id, true);
-            client.sendMessage(Constants.DEFAULT_CLIENT_ID,
-                    "You joined as a spectator (session already active).");
-            sendQuestionToClient(client);
-            sendUserListToAll();
+        // Title
+        titleLabel = new JLabel("Trivia Guess Game", SwingConstants.CENTER);
+        titleLabel.setBounds(200, 5, 700, 50);
+        try {
+            titleLabel.setFont(new Font("Behind The Nineties", Font.BOLD, 36));
+        } catch (Exception e) {
+            titleLabel.setFont(new Font("Serif", Font.BOLD, 36));
         }
+        frame.add(titleLabel);
+
+        // ---------- Connection Panel ----------
+        JPanel conn = roundedPanel();
+        conn.setBounds(20, 60, 300, 120);
+        conn.setLayout(null);
+
+        conn.add(label("Username:", 10, 10));
+        usernameField = textField("dev", 100, 10);
+        conn.add(usernameField);
+
+        conn.add(label("Host:", 10, 45));
+        hostField = textField("localhost", 100, 45);
+        conn.add(hostField);
+
+        conn.add(label("Port:", 10, 80));
+        portField = textField("3000", 100, 80);
+        conn.add(portField);
+
+        JButton connectBtn = new JButton("Connect");
+        connectBtn.setBounds(200, 80, 90, 28);
+        connectBtn.addActionListener(e -> connect());
+        conn.add(connectBtn);
+
+        frame.add(conn);
+
+        // ---------- Ready & Options ----------
+        JPanel readyPanel = roundedPanel();
+        readyPanel.setBounds(20, 190, 300, 150);
+        readyPanel.setLayout(null);
+
+        readyBtn = new JButton("READY");
+        readyBtn.setBounds(10, 10, 120, 28);
+        readyBtn.addActionListener(e -> sendCommand("/ready"));
+        readyPanel.add(readyBtn);
+
+        addQuestionBtn = new JButton("Add Question");
+        addQuestionBtn.setBounds(150, 10, 120, 28);
+        addQuestionBtn.addActionListener(e -> openAddQuestionDialog());
+        readyPanel.add(addQuestionBtn);
+
+        awayChk = new JCheckBox("Away");
+        awayChk.setBounds(10, 50, 80, 20);
+        awayChk.addActionListener(e -> sendCommand(awayChk.isSelected() ? "/away" : "/back"));
+        readyPanel.add(awayChk);
+
+        spectateChk = new JCheckBox("Spectator");
+        spectateChk.setBounds(100, 50, 120, 20);
+        spectateChk.addActionListener(e -> sendCommand("/spectate"));
+        readyPanel.add(spectateChk);
+
+        // Categories
+        readyPanel.add(label("Categories:", 10, 80));
+
+        geoChk = new JCheckBox("Geography", true);
+        sciChk = new JCheckBox("Science", true);
+        mathChk = new JCheckBox("Math", true);
+        histChk = new JCheckBox("History", true);
+
+        geoChk.setBounds(10, 100, 100, 20);
+        sciChk.setBounds(110, 100, 80, 20);
+        mathChk.setBounds(10, 125, 100, 20);
+        histChk.setBounds(110, 125, 80, 20);
+
+        ActionListener catUpdate = e -> sendCategoriesToServer();
+        geoChk.addActionListener(catUpdate);
+        sciChk.addActionListener(catUpdate);
+        mathChk.addActionListener(catUpdate);
+        histChk.addActionListener(catUpdate);
+
+        readyPanel.add(geoChk);
+        readyPanel.add(sciChk);
+        readyPanel.add(mathChk);
+        readyPanel.add(histChk);
+
+        frame.add(readyPanel);
+
+        // ---------- Users Panel ----------
+        JPanel usersPanel = roundedPanel();
+        usersPanel.setBounds(20, 350, 300, 300);
+        usersPanel.setLayout(new BorderLayout());
+        usersPanel.add(new JLabel("Users"), BorderLayout.NORTH);
+        usersPanel.add(new JScrollPane(userList), BorderLayout.CENTER);
+
+        frame.add(usersPanel);
+
+        // ---------- Game Area ----------
+        JPanel gamePanel = roundedPanel();
+        gamePanel.setBounds(340, 60, 430, 590);
+        gamePanel.setLayout(null);
+
+        categoryLabel = label("Category: -", 10, 10);
+        gamePanel.add(categoryLabel);
+
+        timerLabel = label("Timer: -", 300, 10);
+        gamePanel.add(timerLabel);
+
+        questionLabel = new JLabel("Question appears here.", SwingConstants.CENTER);
+        questionLabel.setBounds(20, 60, 380, 100);
+        questionLabel.setFont(new Font("Visby CF", Font.PLAIN, 16));
+        gamePanel.add(questionLabel);
+
+        // Answer buttons
+        ansA = answerButton("Answer 1", 40, 200);
+        ansB = answerButton("Answer 2", 230, 200);
+        ansC = answerButton("Answer 3", 40, 240);
+        ansD = answerButton("Answer 4", 230, 240);
+
+        gamePanel.add(ansA);
+        gamePanel.add(ansB);
+        gamePanel.add(ansC);
+        gamePanel.add(ansD);
+
+        frame.add(gamePanel);
+
+        // ---------- Chat ----------
+        JPanel chatPanel = roundedPanel();
+        chatPanel.setBounds(780, 60, 300, 350);
+        chatPanel.setLayout(new BorderLayout());
+
+        chatArea = new JTextArea();
+        chatArea.setEditable(false);
+        chatPanel.add(new JScrollPane(chatArea), BorderLayout.CENTER);
+
+        JPanel inputWrap = new JPanel(new BorderLayout());
+        chatInput = new JTextField();
+        JButton sendBtn = new JButton("Send");
+
+        sendBtn.addActionListener(e -> handleChatSend());
+        chatInput.addActionListener(e -> handleChatSend());
+
+        inputWrap.add(chatInput, BorderLayout.CENTER);
+        inputWrap.add(sendBtn, BorderLayout.EAST);
+
+        chatPanel.add(inputWrap, BorderLayout.SOUTH);
+
+        frame.add(chatPanel);
+
+        // ---------- Game Events ----------
+        JPanel eventsPanel = roundedPanel();
+        eventsPanel.setBounds(780, 420, 300, 230);
+        eventsPanel.setLayout(new BorderLayout());
+        eventsPanel.add(new JLabel("Game Events"), BorderLayout.NORTH);
+
+        gameEvents = new JTextArea();
+        gameEvents.setEditable(false);
+        eventsPanel.add(new JScrollPane(gameEvents), BorderLayout.CENTER);
+
+        frame.add(eventsPanel);
+
+        frame.setVisible(true);
     }
 
-    @Override
-    protected synchronized void handleDisconnect(ServerThread sender) {
-        super.handleDisconnect(sender);
+    // =========================================================
+    // CHAT COMMANDS
+    // =========================================================
 
-        long id = sender.getClientId();
-        points.remove(id);
-        ready.remove(id);
-        away.remove(id);
-        spectator.remove(id);
-        lockedThisRound.remove(id);
-        correctOrder.remove(id);
-
-        sendUserListToAll();
-    }
-
-    // ==============================================================
-    // Chat + Command Routing
-    // ==============================================================
-    @Override
-    protected synchronized void handleMessage(ServerThread sender, String raw) {
-        if (raw == null) return;
-        String text = raw.trim();
+    private void handleChatSend() {
+        String text = chatInput.getText().trim();
         if (text.isEmpty()) return;
 
-        // Chat if no slash
-        if (!text.startsWith("/")) {
-            if (spectator.getOrDefault(sender.getClientId(), false)) {
-                sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
-                        "Spectators cannot chat.");
-                return;
-            }
-            super.handleMessage(sender, text);
-            return;
+        if (text.startsWith("/")) {
+            sendCommand(text);
+        } else {
+            sendChat(text);
         }
 
-        // Commands
-        if (text.equalsIgnoreCase("/ready")) { handleReady(sender); return; }
-        if (text.startsWith("/answer "))   { handleAnswer(sender, text.substring(8)); return; }
-        if (text.equalsIgnoreCase("/away")) { handleAway(sender, true); return; }
-        if (text.equalsIgnoreCase("/back")) { handleAway(sender, false); return; }
-        if (text.equalsIgnoreCase("/spectate")) { handleSpectator(sender); return; }
-        if (text.startsWith("/categories ")) { handleCategorySelection(sender, text.substring(12)); return; }
-        if (text.startsWith("/addq ")) { handleAddQuestion(sender, text.substring(6)); return; }
-
-        sender.sendMessage(Constants.DEFAULT_CLIENT_ID, "Unknown command: " + text);
+        chatInput.setText("");
     }
 
-    // ==============================================================
-    // READY / SESSION CONTROL
-    // ==============================================================
-    private void handleReady(ServerThread sender) {
-        long id = sender.getClientId();
-
-        if (spectator.get(id)) {
-            sender.sendMessage(Constants.DEFAULT_CLIENT_ID, "Spectators cannot ready.");
-            return;
-        }
-
-        ready.put(id, true);
-        if (hostClientId == Constants.DEFAULT_CLIENT_ID) {
-            hostClientId = id;
-            broadcast(null, sender.getDisplayName() + " is the host.");
-        }
-
-        broadcast(null, sender.getDisplayName() + " is READY");
-        sendUserListToAll();
-
-        if (!sessionActive && allActivePlayersReady()) {
-            startSession();
-        }
-    }
-
-    private boolean allActivePlayersReady() {
-        boolean someone = false;
-
-        for (ServerThread c : getClients()) {
-            long id = c.getClientId();
-            if (spectator.get(id) || away.get(id)) continue;
-
-            someone = true;
-            if (!ready.get(id)) return false;
-        }
-        return someone;
-    }
-
-    private void startSession() {
-        loadQuestionsFromFile();
-        sessionActive = true;
-        currentRound = 0;
-
-        broadcast(null, "=== New Trivia Session Starting ===");
-
-        for (Long id : ready.keySet()) ready.put(id, false);
-
-        startNextRound();
-    }
-
-    private void endSession() {
-        sessionActive = false;
-        stopTimer();
-        broadcast(null, "=== GAME OVER ===");
-        showScoreboard("Final Scores:");
-
-        for (Long id : points.keySet()) points.put(id, 0);
-
-        lockedThisRound.replaceAll((k, v) -> false);
-        currentQuestion = null;
-        correctOrder.clear();
-        sendUserListToAll();
-
-        broadcast(null, "Type /ready to play again.");
-    }
-
-    private void startNextRound() {
-        currentRound++;
-        correctOrder = new ArrayList<>();
-        lockedThisRound.replaceAll((k, v) -> false);
-
-        if (currentRound > MAX_ROUNDS) { endSession(); return; }
-
-        currentQuestion = drawRandomQuestion();
-        if (currentQuestion == null) {
-            broadcast(null, "No valid questions available.");
-            endSession();
-            return;
-        }
-
-        broadcast(null, "Round " + currentRound + " / " + MAX_ROUNDS);
-        sendQuestionToAll();
-        sendUserListToAll();
-        startTimer();
-    }
-
-    // ==============================================================
-    // QUESTIONS / CATEGORIES
-    // ==============================================================
-    private void loadQuestionsFromFile() {
-        questions.clear();
-        File f = new File("questions.txt");
-
-        if (!f.exists()) { addSampleQuestions(); return; }
-
-        try (BufferedReader br = new BufferedReader(new FileReader(f))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                Question q = parseQuestionLine(line.trim());
-                if (q != null) questions.add(q);
-            }
-        } catch (Exception e) {
-            addSampleQuestions();
-        }
-    }
-
-    private Question parseQuestionLine(String line) {
-        if (line.isEmpty() || line.startsWith("#")) return null;
-
-        String[] p = line.split("\\|");
-        if (p.length < 7) return null;
-
-        Question q = new Question();
-        q.category = p[0].toLowerCase();
-        q.text = p[1];
-
-        q.answers.add(p[2]);
-        q.answers.add(p[3]);
-        q.answers.add(p[4]);
-        q.answers.add(p[5]);
-
-        try { q.correctIndex = Integer.parseInt(p[6]); }
-        catch (Exception ex) { q.correctIndex = 0; }
-
-        return q;
-    }
-
-    private void addSampleQuestions() {
-        questions.add(sample("geography", "What is the capital of France?",
-                "Paris", "Berlin", "Madrid", "Rome", 0));
-        questions.add(sample("science", "What planet is known as the Red Planet?",
-                "Earth", "Mars", "Jupiter", "Venus", 1));
-        questions.add(sample("math", "What is 9 × 9?",
-                "72", "81", "99", "108", 1));
-        questions.add(sample("history", "Who was the first U.S. President?",
-                "George Washington", "Abraham Lincoln", "Thomas Jefferson", "John Adams", 0));
-        questions.add(sample("movies", "Who directed Inception?",
-                "Nolan", "Spielberg", "Cameron", "Scott", 0));
-        questions.add(sample("sports", "How many points is a touchdown?",
-                "3", "6", "7", "9", 1));
-    }
-
-    private Question sample(String cat, String q, String a, String b, String c, String d, int correct) {
-        Question x = new Question();
-        x.category = cat;
-        x.text = q;
-        x.answers.add(a);
-        x.answers.add(b);
-        x.answers.add(c);
-        x.answers.add(d);
-        x.correctIndex = correct;
-        return x;
-    }
-
-    private Question drawRandomQuestion() {
-        ArrayList<Question> eligible = new ArrayList<>();
-
-        for (Question q : questions) {
-            if (enabledCategories.contains(q.category)) eligible.add(q);
-        }
-
-        if (eligible.isEmpty()) eligible.addAll(questions);
-        if (eligible.isEmpty()) return null;
-
-        Question q = eligible.get(random.nextInt(eligible.size()));
-        questions.remove(q);
-        return q;
-    }
-
-    private void handleCategorySelection(ServerThread sender, String csv) {
-        if (sessionActive) {
-            sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
-                    "Categories can only be changed during Ready Check.");
-            return;
-        }
-        if (sender.getClientId() != hostClientId) {
-            sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
-                    "Only host can change categories.");
-            return;
-        }
-
-        enabledCategories.clear();
-        for (String s : csv.split(",")) {
-            s = s.trim().toLowerCase();
-            if (!s.isEmpty()) enabledCategories.add(s);
-        }
-
-        broadcast(null, "Host enabled categories: " + enabledCategories);
-    }
-
-    private void handleAddQuestion(ServerThread sender, String line) {
-        if (sessionActive) {
-            sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
-                    "Cannot add question during session.");
-            return;
-        }
-
-        Question q = parseQuestionLine(line);
-        if (q == null) {
-            sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
-                    "Invalid format. Use: category|question|a|b|c|d|correctIndex");
-            return;
-        }
-
-        questions.add(q);
-        appendQuestionToFile(line);
-        broadcast(null, "New question added in category: " + q.category);
-    }
-
-    private void appendQuestionToFile(String line) {
-        try (PrintWriter out = new PrintWriter(new FileWriter("questions.txt", true))) {
-            out.println(line);
+    private void sendChat(String msg) {
+        try {
+            Payload p = new Payload();
+            p.setPayloadType(PayloadType.MESSAGE);
+            p.setMessage(msg);
+            out.writeObject(p);
+            out.flush();
         } catch (Exception ignored) {}
     }
 
-    // ==============================================================
-    // AWAY / SPECTATOR
-    // ==============================================================
-    private void handleAway(ServerThread sender, boolean v) {
-        away.put(sender.getClientId(), v);
-        broadcast(null, sender.getDisplayName() + (v ? " is AWAY." : " is BACK."));
-        sendUserListToAll();
+    private void sendCommand(String cmd) {
+        try {
+            Payload p = new Payload();
+            p.setPayloadType(PayloadType.COMMAND);
+            p.setMessage(cmd);
+            out.writeObject(p);
+            out.flush();
+        } catch (Exception ignored) {}
     }
 
-    private void handleSpectator(ServerThread sender) {
-        spectator.put(sender.getClientId(), true);
-        ready.put(sender.getClientId(), false);
+    private void sendCategoriesToServer() {
+        String csv = "";
+        if (geoChk.isSelected()) csv += "geography,";
+        if (sciChk.isSelected()) csv += "science,";
+        if (mathChk.isSelected()) csv += "math,";
+        if (histChk.isSelected()) csv += "history,";
 
-        broadcast(null, sender.getDisplayName() + " is now a SPECTATOR.");
-        sendUserListToAll();
+        sendCommand("/categories " + csv);
     }
 
-    // ==============================================================
-    // ANSWERING / ROUND RESOLUTION
-    // ==============================================================
-    private void handleAnswer(ServerThread sender, String rawChoice) {
-        if (!sessionActive || currentQuestion == null) {
-            sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
-                    "No active round.");
-            return;
-        }
+    // =========================================================
+    // ANSWER BUTTON LOGIC
+    // =========================================================
 
-        long id = sender.getClientId();
+    private JButton answerButton(String text, int x, int y) {
+        JButton b = new JButton(text);
+        b.setBounds(x, y, 150, 32);
+        b.addActionListener(e -> {
+            if (!roundActive || lockedAnswer) return;
 
-        if (spectator.get(id)) {
-            sender.sendMessage(Constants.DEFAULT_CLIENT_ID, "Spectators cannot answer."); return;
-        }
-        if (away.get(id)) {
-            sender.sendMessage(Constants.DEFAULT_CLIENT_ID, "You are away."); return;
-        }
-        if (lockedThisRound.get(id)) {
-            sender.sendMessage(Constants.DEFAULT_CLIENT_ID, "Already locked."); return;
-        }
+            int index = switch (b.getText()) {
+                case "A", "Answer 1" -> 0;
+                case "B", "Answer 2" -> 1;
+                case "C", "Answer 3" -> 2;
+                default -> 3;
+            };
 
-        int idx = mapChoiceToIndex(rawChoice);
-        if (idx < 0 || idx > 3) {
-            sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
-                    "Use A/B/C/D or 0/1/2/3.");
-            return;
-        }
-
-        boolean correct = (idx == currentQuestion.correctIndex);
-        lockedThisRound.put(id, true);
-
-        broadcast(null, sender.getDisplayName() +
-                (correct ? " locked CORRECT!" : " locked WRONG!"));
-
-        if (correct) correctOrder.add(id);
-
-        sendUserListToAll();
-
-        if (allActivePlayersLocked()) {
-            endRound("All answers submitted.");
-        }
-    }
-
-    private int mapChoiceToIndex(String s) {
-        if (s == null || s.isEmpty()) return -1;
-
-        char c = Character.toUpperCase(s.trim().charAt(0));
-        if (c >= '0' && c <= '3') return c - '0';
-        if (c == 'A') return 0;
-        if (c == 'B') return 1;
-        if (c == 'C') return 2;
-        if (c == 'D') return 3;
-
-        return -1;
-    }
-
-    private boolean allActivePlayersLocked() {
-        for (ServerThread c : getClients()) {
-            long id = c.getClientId();
-
-            if (spectator.get(id) || away.get(id)) continue;
-            if (!lockedThisRound.get(id)) return false;
-        }
-        return true;
-    }
-
-    private void endRound(String reason) {
-        broadcast(null, "Round Ended: " + reason);
-        showCorrectAnswer();
-        awardPoints();
-        showScoreboard("Scores:");
-        sendUserListToAll();
-        stopTimer();
-
-        if (currentRound >= MAX_ROUNDS) endSession();
-        else startNextRound();
-    }
-
-    private void showCorrectAnswer() {
-        int idx = currentQuestion.correctIndex;
-        char letter = (char) ('A' + idx);
-        broadcast(null, "Correct Answer: " + letter + " → " + currentQuestion.answers.get(idx));
-    }
-
-    private void awardPoints() {
-        int[] awards = {10, 7, 5, 3, 1};
-
-        for (int i = 0; i < correctOrder.size(); i++) {
-            long id = correctOrder.get(i);
-
-            int gained = (i < awards.length ? awards[i] : 1);
-            int total = points.get(id) + gained;
-            points.put(id, total);
-
-            ServerThread st = findClient(id);
-            String name = (st != null ? st.getDisplayName() : ("Player#" + id));
-
-            broadcast(null, name + " earned " + gained + " pts!");
-
-            PointsPayload pp = new PointsPayload();
-            pp.setPayloadType(PayloadType.POINTS_UPDATE);
-            pp.setClientId(Constants.DEFAULT_CLIENT_ID);
-            pp.setTargetClientId(id);
-            pp.setPoints(total);
-            pp.setMessage(name + " now has " + total + " points.");
-
-            for (ServerThread c : getClients()) c.sendPayload(pp);
-        }
-    }
-
-    private ServerThread findClient(long id) {
-        for (ServerThread s : getClients())
-            if (s.getClientId() == id) return s;
-        return null;
-    }
-
-    private void showScoreboard(String header) {
-        broadcast(null, header);
-
-        ArrayList<Map.Entry<Long, Integer>> order =
-                new ArrayList<>(points.entrySet());
-
-        order.sort((a, b) -> b.getValue().compareTo(a.getValue()));
-
-        for (Map.Entry<Long, Integer> e : order) {
-            ServerThread st = findClient(e.getKey());
-            String name = (st != null ? st.getDisplayName() : ("Player#" + e.getKey()));
-            broadcast(null, name + ": " + e.getValue());
-        }
-    }
-
-    // ==============================================================
-    // QUESTION & USER LIST SYNC
-    // ==============================================================
-    private void sendQuestionToAll() {
-        for (ServerThread c : getClients()) sendQuestionToClient(c);
-    }
-
-    private void sendQuestionToClient(ServerThread client) {
-        if (currentQuestion == null) return;
-
-        QAPayload qp = new QAPayload();
-        qp.setPayloadType(PayloadType.QUESTION);
-        qp.setClientId(Constants.DEFAULT_CLIENT_ID);
-        qp.setCategory(currentQuestion.category);
-        qp.setQuestionText(currentQuestion.text);
-        qp.setAnswers(new ArrayList<>(currentQuestion.answers));
-
-        client.sendPayload(qp);
-    }
-
-    private void sendUserListToAll() {
-        UserListPayload up = new UserListPayload();
-        up.setPayloadType(PayloadType.USER_LIST);
-        up.setClientId(Constants.DEFAULT_CLIENT_ID);
-
-        ArrayList<ServerThread> sorted = new ArrayList<>(getClients());
-        sorted.sort((a, b) -> {
-            int pa = points.get(a.getClientId());
-            int pb = points.get(b.getClientId());
-            if (pa != pb) return Integer.compare(pb, pa);
-            return Long.compare(a.getClientId(), b.getClientId());
+            sendCommand("/answer " + index);
+            lockedAnswer = true;
+            disableAnswerButtons();
+            b.setBackground(new Color(180, 200, 255));
         });
-
-        for (ServerThread c : sorted) {
-            long id = c.getClientId();
-            up.addUser(
-                    id,
-                    c.getDisplayName(),
-                    points.get(id),
-                    lockedThisRound.get(id),
-                    away.get(id),
-                    spectator.get(id)
-            );
-        }
-
-        for (ServerThread c : getClients()) c.sendPayload(up);
+        return b;
     }
 
-    // ==============================================================
-    // ROUND TIMER
-    // ==============================================================
-    private void startTimer() {
-        stopTimer();
-        timerSecondsLeft = ROUND_SECONDS;
+    private void disableAnswerButtons() {
+        ansA.setEnabled(false);
+        ansB.setEnabled(false);
+        ansC.setEnabled(false);
+        ansD.setEnabled(false);
+    }
 
-        timerThread = new Thread(() -> {
-            try {
-                while (timerSecondsLeft >= 0 && sessionActive && currentQuestion != null) {
-                    sendTimerToAll();
-                    Thread.sleep(1000);
-                    timerSecondsLeft--;
-                }
-            } catch (InterruptedException ignored) {}
+    private void enableAnswerButtons() {
+        ansA.setEnabled(true);
+        ansB.setEnabled(true);
+        ansC.setEnabled(true);
+        ansD.setEnabled(true);
 
-            if (sessionActive && currentQuestion != null && timerSecondsLeft < 0) {
-                synchronized (GameRoom.this) {
-                    endRound("Time's up!");
+        ansA.setBackground(null);
+        ansB.setBackground(null);
+        ansC.setBackground(null);
+        ansD.setBackground(null);
+    }
+
+    // =========================================================
+    // CONNECTION
+    // =========================================================
+
+    private void connect() {
+        try {
+            socket = new Socket(hostField.getText().trim(),
+                                Integer.parseInt(portField.getText().trim()));
+            out = new ObjectOutputStream(socket.getOutputStream());
+            in = new ObjectInputStream(socket.getInputStream());
+
+            // Send connect payload
+            ConnectPayload c = new ConnectPayload();
+            c.setPayloadType(PayloadType.CONNECT);
+            c.setClientName(usernameField.getText().trim());
+            out.writeObject(c);
+            out.flush();
+
+            new Thread(this::listen).start();
+
+        } catch (Exception e) {
+            appendChat("Connection failed: " + e.getMessage());
+        }
+    }
+
+    // =========================================================
+    // LISTENER LOOP
+    // =========================================================
+    private void listen() {
+        try {
+            while (true) {
+                Object obj = in.readObject();
+
+                if (obj instanceof Payload p) {
+                    switch (p.getPayloadType()) {
+                        case CLIENT_ID -> {
+                            this.clientId = p.getClientId();
+                        }
+                        case MESSAGE -> appendChat(p.getMessage());
+                        case SERVER_MESSAGE -> appendEvent(p.getMessage());
+
+                        case QUESTION -> {
+                            handleQuestion((QAPayload)p);
+                        }
+                        case USER_LIST -> {
+                            updateUserList((UserListPayload)p);
+                        }
+                        case POINTS_UPDATE -> {
+                            appendEvent(((PointsPayload)p).getMessage());
+                        }
+                        case TIMER -> {
+                            timerLabel.setText("Timer: " + p.getNumber());
+                        }
+                    }
                 }
             }
-        });
-
-        timerThread.start();
+        } catch (Exception e) {
+            appendEvent("Disconnected from server.");
+        }
     }
 
-    private void stopTimer() {
-        if (timerThread != null && timerThread.isAlive()) timerThread.interrupt();
-        timerThread = null;
+    // =========================================================
+    // UI UPDATES FROM SERVER
+    // =========================================================
+
+    private void handleQuestion(QAPayload q) {
+        categoryLabel.setText("Category: " + q.getCategory());
+        questionLabel.setText("<html><div style='text-align:center;'>" +
+                q.getQuestion() + "</div></html>");
+
+        ArrayList<String> ans = q.getAnswers();
+        ansA.setText(ans.get(0));
+        ansB.setText(ans.get(1));
+        ansC.setText(ans.get(2));
+        ansD.setText(ans.get(3));
+
+        roundActive = true;
+        lockedAnswer = false;
+        enableAnswerButtons();
     }
 
-    private void sendTimerToAll() {
-        Payload p = new Payload();
-        p.setPayloadType(PayloadType.TIMER);
-        p.setClientId(Constants.DEFAULT_CLIENT_ID);
-        p.setMessage(String.valueOf(timerSecondsLeft));
+    private void updateUserList(UserListPayload list) {
+        userListModel.clear();
+        for (String u : list.getUsers()) userListModel.addElement(u);
+    }
 
-        for (ServerThread c : getClients()) c.sendPayload(p);
+    // =========================================================
+    // UTIL UI HELPERS
+    // =========================================================
+
+    private JPanel roundedPanel() {
+        JPanel p = new JPanel();
+        p.setBackground(new Color(250, 245, 255));
+        p.setBorder(new LineBorder(new Color(180, 160, 220), 2, true));
+        return p;
+    }
+
+    private JLabel label(String text, int x, int y) {
+        JLabel l = new JLabel(text);
+        l.setBounds(x, y, 200, 20);
+        return l;
+    }
+
+    private JTextField textField(String val, int x, int y) {
+        JTextField t = new JTextField(val);
+        t.setBounds(x, y, 100, 22);
+        return t;
+    }
+
+    private void appendChat(String text) {
+        chatArea.append(text + "\n");
+    }
+    private void appendEvent(String text) {
+        gameEvents.append(text + "\n");
+    }
+
+    // =========================================================
+    // ADD QUESTION POPUP
+    // =========================================================
+    private void openAddQuestionDialog() {
+        JTextField cat = new JTextField();
+        JTextField q = new JTextField();
+        JTextField a1 = new JTextField();
+        JTextField a2 = new JTextField();
+        JTextField a3 = new JTextField();
+        JTextField a4 = new JTextField();
+        JTextField correct = new JTextField();
+
+        Object[] msg = {
+                "Category:", cat,
+                "Question:", q,
+                "Answer 1:", a1,
+                "Answer 2:", a2,
+                "Answer 3:", a3,
+                "Answer 4:", a4,
+                "Correct Index (0-3):", correct
+        };
+
+        int opt = JOptionPane.showConfirmDialog(frame, msg,
+                "Add Question", JOptionPane.OK_CANCEL_OPTION);
+
+        if (opt == JOptionPane.OK_OPTION) {
+            String line = cat.getText() + "|" + q.getText() + "|" +
+                    a1.getText() + "|" + a2.getText() + "|" +
+                    a3.getText() + "|" + a4.getText() + "|" +
+                    correct.getText();
+
+            sendCommand("/addq " + line);
+        }
     }
 }
