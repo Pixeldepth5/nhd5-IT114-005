@@ -1,10 +1,11 @@
 // UCID: nhd5
 // Date: December 8, 2025
 // Description: TriviaGuessGame GameRoom – server-side round/session logic (MS2+MS3).
-//  - Uses classic payload names: QUESTION and USER_LIST (Option B).
-//  - Reads questions from "questions.txt" in the working directory (fallback to samples).
+//  - Uses classic payload names: QUESTION and USER_LIST.
+//  - Reads questions from "questions.txt" (format: category|question|a1|a2|a3|a4|correctIndex).
 //  - Accepts answers as A/B/C/D OR 0/1/2/3.
-// References (beginner friendly patterns):
+//  - Supports Ready check, Away, Spectator, timer, scoring & scoreboard.
+// References (beginner friendly):
 //  - https://www.w3schools.com/java/java_arraylist.asp
 //  - https://www.w3schools.com/java/java_hashmap.asp
 //  - https://www.w3schools.com/java/java_files_read.asp
@@ -32,7 +33,7 @@ public class GameRoom extends Room {
         int correctIndex;
     }
 
-    // Tunables per rubric
+    // Tunable settings per rubric
     private static final int MAX_ROUNDS = 5;
     private static final int ROUND_SECONDS = 20;
 
@@ -62,7 +63,7 @@ public class GameRoom extends Room {
     public GameRoom(String name) {
         super(name);
 
-        // Start with some defaults enabled (host can change during ready check)
+        // Start with defaults enabled (host can change during Ready Check)
         enabledCategories.add("geography");
         enabledCategories.add("science");
         enabledCategories.add("math");
@@ -70,6 +71,7 @@ public class GameRoom extends Room {
         enabledCategories.add("movies");
         enabledCategories.add("sports");
 
+        // Initial load (will re-load fresh on each new session)
         loadQuestionsFromFile();
     }
 
@@ -109,22 +111,60 @@ public class GameRoom extends Room {
         sendUserListToAll();
     }
 
-    // ====================== Command Handling ======================
+    // ====================== Command + Chat Handling ======================
 
     @Override
     protected synchronized void handleMessage(ServerThread sender, String raw) {
+        if (raw == null) return;
         String text = raw.trim();
+        if (text.isEmpty()) return;
 
-        if (text.equalsIgnoreCase("/ready")) { handleReady(sender); return; }
-        if (text.toLowerCase().startsWith("/answer ")) { handleAnswer(sender, text.substring(8).trim()); return; }
-        if (text.equalsIgnoreCase("/away")) { handleAway(sender, true); return; }
-        if (text.equalsIgnoreCase("/back")) { handleAway(sender, false); return; }
-        if (text.equalsIgnoreCase("/spectate")) { handleSpectator(sender); return; }
-        if (text.toLowerCase().startsWith("/categories ")) { handleCategorySelection(sender, text.substring(12).trim()); return; }
-        if (text.toLowerCase().startsWith("/addq ")) { handleAddQuestion(sender, text.substring(6).trim()); return; }
+        // Non-slash → chat
+        if (!text.startsWith("/")) {
+            long id = sender.getClientId();
+            if (spectator.getOrDefault(id, false)) {
+                sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                        "Spectators cannot send chat messages.");
+                return;
+            }
+            // Use base Room chat behavior (prefix [CHAT] and broadcast)
+            super.handleMessage(sender, text);
+            return;
+        }
 
-        // Fallback: normal room chat
-        super.handleMessage(sender, raw);
+        // Slash commands below
+        if (text.equalsIgnoreCase("/ready")) {
+            handleReady(sender);
+            return;
+        }
+        if (text.toLowerCase().startsWith("/answer ")) {
+            handleAnswer(sender, text.substring(8).trim());
+            return;
+        }
+        if (text.equalsIgnoreCase("/away")) {
+            handleAway(sender, true);
+            return;
+        }
+        if (text.equalsIgnoreCase("/back")) {
+            handleAway(sender, false);
+            return;
+        }
+        if (text.equalsIgnoreCase("/spectate")) {
+            handleSpectator(sender);
+            return;
+        }
+        if (text.toLowerCase().startsWith("/categories ")) {
+            handleCategorySelection(sender, text.substring(12).trim());
+            return;
+        }
+        if (text.toLowerCase().startsWith("/addq ")) {
+            handleAddQuestion(sender, text.substring(6).trim());
+            return;
+        }
+
+        // Unknown /command → treat as event (not chat)
+        sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                "Unknown command: " + text);
     }
 
     // ====================== Ready / Session Control ======================
@@ -164,23 +204,37 @@ public class GameRoom extends Room {
     }
 
     private void startSession() {
+        // Fresh question bank per session
+        loadQuestionsFromFile();
+
         sessionActive = true;
         currentRound = 0;
         broadcast(null, "=== Trivia Session Starting ===");
-        // ready flags reset for next session
-        for (Long id : ready.keySet()) ready.put(id, false);
+
+        // Reset ready flags; new ready check required for next session
+        for (Long id : ready.keySet()) {
+            ready.put(id, false);
+        }
         startNextRound();
     }
 
     private void endSession() {
         sessionActive = false;
+        stopTimer();
         broadcast(null, "=== GAME OVER ===");
         showScoreboard("Final scores:");
-        broadcast(null, "Type /ready to play again.");
+
+        // Reset player points and round-specific state for a new session
+        for (Long id : points.keySet()) {
+            points.put(id, 0);
+        }
+        lockedThisRound.replaceAll((k, v) -> false);
         currentQuestion = null;
         correctOrder.clear();
         timerSecondsLeft = 0;
+
         sendUserListToAll();
+        broadcast(null, "Type /ready to play again.");
     }
 
     private void startNextRound() {
@@ -188,9 +242,12 @@ public class GameRoom extends Room {
         correctOrder.clear();
         lockedThisRound.replaceAll((k, v) -> false);
 
-        if (currentRound > MAX_ROUNDS) { endSession(); return; }
+        if (currentRound > MAX_ROUNDS) {
+            endSession();
+            return;
+        }
 
-        currentQuestion = pickRandomQuestion();
+        currentQuestion = drawRandomQuestionFromPool();
         if (currentQuestion == null) {
             broadcast(null, "No questions available for selected categories.");
             endSession();
@@ -236,7 +293,9 @@ public class GameRoom extends Room {
         q.text = parts[1];
 
         int answersCount = parts.length - 3; // last element is correctIndex
-        for (int i = 0; i < answersCount; i++) q.answers.add(parts[2 + i]);
+        for (int i = 0; i < answersCount; i++) {
+            q.answers.add(parts[2 + i]);
+        }
 
         try {
             q.correctIndex = Integer.parseInt(parts[parts.length - 1]);
@@ -247,10 +306,12 @@ public class GameRoom extends Room {
     }
 
     private void addSampleQuestions() {
+        // Fallback questions if questions.txt is missing
         Question q1 = new Question();
         q1.category = "movies";
         q1.text = "Who directed the movie 'Inception'?";
-        q1.answers.addAll(Arrays.asList("Christopher Nolan", "Steven Spielberg", "James Cameron", "Ridley Scott"));
+        q1.answers.addAll(Arrays.asList(
+                "Christopher Nolan", "Steven Spielberg", "James Cameron", "Ridley Scott"));
         q1.correctIndex = 0;
         questions.add(q1);
 
@@ -262,23 +323,43 @@ public class GameRoom extends Room {
         questions.add(q2);
     }
 
-    private Question pickRandomQuestion() {
-        ArrayList<Question> filtered = new ArrayList<>();
-        for (Question q : questions) if (enabledCategories.contains(q.category)) filtered.add(q);
-        if (filtered.isEmpty()) filtered.addAll(questions);
-        if (filtered.isEmpty()) return null;
-        return filtered.get(random.nextInt(filtered.size()));
+    /**
+     * Randomly chooses and removes a question from the in-memory list.
+     * Honors enabledCategories if possible.
+     */
+    private Question drawRandomQuestionFromPool() {
+        if (questions.isEmpty()) return null;
+
+        ArrayList<Integer> eligible = new ArrayList<>();
+        for (int i = 0; i < questions.size(); i++) {
+            Question q = questions.get(i);
+            if (enabledCategories.isEmpty() || enabledCategories.contains(q.category)) {
+                eligible.add(i);
+            }
+        }
+
+        if (eligible.isEmpty()) {
+            // No category-filtered questions; use all remaining
+            int idx = random.nextInt(questions.size());
+            return questions.remove(idx);
+        } else {
+            int listIndex = eligible.get(random.nextInt(eligible.size()));
+            return questions.remove(listIndex);
+        }
     }
 
     private void handleCategorySelection(ServerThread sender, String csv) {
         if (sessionActive) {
-            sender.sendMessage(Constants.DEFAULT_CLIENT_ID, "Categories can be changed only during Ready Check.");
+            sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                    "Categories can be changed only during Ready Check.");
             return;
         }
         if (sender.getClientId() != hostClientId) {
-            sender.sendMessage(Constants.DEFAULT_CLIENT_ID, "Only the host can change categories.");
+            sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                    "Only the host can change categories.");
             return;
         }
+
         enabledCategories.clear();
         for (String p : csv.split(",")) {
             String cat = p.trim().toLowerCase();
@@ -289,7 +370,8 @@ public class GameRoom extends Room {
 
     private void handleAddQuestion(ServerThread sender, String line) {
         if (sessionActive) {
-            sender.sendMessage(Constants.DEFAULT_CLIENT_ID, "Add questions only outside an active session.");
+            sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                    "Add questions only outside an active session.");
             return;
         }
         Question q = parseQuestionLine(line);
@@ -300,15 +382,18 @@ public class GameRoom extends Room {
         }
         questions.add(q);
         appendQuestionToFile(line);
-        broadcast(null, "New question added by " + sender.getDisplayName() + " in '" + q.category + "'.");
+        broadcast(null, "New question added by " + sender.getDisplayName() +
+                " in '" + q.category + "'.");
     }
 
     private void appendQuestionToFile(String line) {
         try (FileWriter fw = new FileWriter("questions.txt", true);
              BufferedWriter bw = new BufferedWriter(fw);
              PrintWriter out = new PrintWriter(bw)) {
+
             out.println(line);
-        } catch (IOException ignored) { }
+        } catch (IOException ignored) {
+        }
     }
 
     // ====================== Away / Spectator ======================
@@ -316,7 +401,8 @@ public class GameRoom extends Room {
     private void handleAway(ServerThread sender, boolean isAway) {
         long id = sender.getClientId();
         away.put(id, isAway);
-        broadcast(null, sender.getDisplayName() + (isAway ? " is now away." : " is no longer away."));
+        broadcast(null, sender.getDisplayName() +
+                (isAway ? " is now away." : " is no longer away."));
         sendUserListToAll();
     }
 
@@ -332,26 +418,45 @@ public class GameRoom extends Room {
 
     private void handleAnswer(ServerThread sender, String choiceText) {
         if (!sessionActive || currentQuestion == null) {
-            sender.sendMessage(Constants.DEFAULT_CLIENT_ID, "No active round. Wait for the next question.");
+            sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                    "No active round. Wait for the next question.");
             return;
         }
 
         long id = sender.getClientId();
-        if (spectator.getOrDefault(id, false)) { sender.sendMessage(Constants.DEFAULT_CLIENT_ID, "Spectators cannot answer."); return; }
-        if (away.getOrDefault(id, false)) { sender.sendMessage(Constants.DEFAULT_CLIENT_ID, "You are marked away. Use /back to play again."); return; }
-        if (lockedThisRound.getOrDefault(id, false)) { sender.sendMessage(Constants.DEFAULT_CLIENT_ID, "You already locked in this round."); return; }
+        if (spectator.getOrDefault(id, false)) {
+            sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                    "Spectators cannot answer.");
+            return;
+        }
+        if (away.getOrDefault(id, false)) {
+            sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                    "You are marked away. Use /back to play again.");
+            return;
+        }
+        if (lockedThisRound.getOrDefault(id, false)) {
+            sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                    "You already locked in this round.");
+            return;
+        }
 
         int index = mapChoiceToIndex(choiceText);
         if (index < 0 || index >= currentQuestion.answers.size()) {
-            sender.sendMessage(Constants.DEFAULT_CLIENT_ID, "Invalid answer. Use A, B, C, D or 0,1,2,3.");
+            sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                    "Invalid answer. Use A, B, C, D or 0,1,2,3.");
             return;
         }
 
         boolean correct = (index == currentQuestion.correctIndex);
         lockedThisRound.put(id, true);
 
-        broadcast(null, sender.getDisplayName() + (correct ? " locked in the CORRECT answer!" : " locked in the WRONG answer."));
-        if (correct) correctOrder.add(id);
+        broadcast(null, sender.getDisplayName() +
+                (correct ? " locked in the CORRECT answer!" :
+                        " locked in the WRONG answer."));
+
+        if (correct) {
+            correctOrder.add(id);
+        }
 
         sendUserListToAll(); // mark locked-in status
 
@@ -370,7 +475,7 @@ public class GameRoom extends Room {
         if (c == 'C') return 2;
         if (c == 'D') return 3;
         return -1;
-        }
+    }
 
     private boolean allActivePlayersLocked() {
         for (ServerThread st : getClients()) {
@@ -383,13 +488,26 @@ public class GameRoom extends Room {
 
     private void endRound(String reason) {
         broadcast(null, "Round ended: " + reason);
+        showCorrectAnswer();
         awardPoints();
         showScoreboard("Current scores:");
         sendUserListToAll();
         stopTimer();
 
-        if (currentRound >= MAX_ROUNDS) endSession();
-        else startNextRound();
+        if (currentRound >= MAX_ROUNDS) {
+            endSession();
+        } else {
+            startNextRound();
+        }
+    }
+
+    private void showCorrectAnswer() {
+        if (currentQuestion == null) return;
+        int idx = currentQuestion.correctIndex;
+        if (idx < 0 || idx >= currentQuestion.answers.size()) return;
+        char letter = (char) ('A' + idx);
+        String text = currentQuestion.answers.get(idx);
+        broadcast(null, "Correct answer: " + letter + " – " + text);
     }
 
     private void awardPoints() {
@@ -412,100 +530,19 @@ public class GameRoom extends Room {
             p.setTargetClientId(id);
             p.setPoints(newTotal);
             p.setMessage(name + " now has " + newTotal + " points.");
-            for (ServerThread client : getClients()) client.sendPayload(p);
+            for (ServerThread client : getClients()) {
+                client.sendPayload(p);
+            }
         }
     }
 
     private ServerThread findClient(long id) {
-        for (ServerThread s : getClients()) if (s.getClientId() == id) return s;
+        for (ServerThread s : getClients()) {
+            if (s.getClientId() == id) return s;
+        }
         return null;
     }
 
     private void showScoreboard(String header) {
         broadcast(null, header);
-        ArrayList<Map.Entry<Long, Integer>> list = new ArrayList<>(points.entrySet());
-        list.sort((a, b) -> b.getValue().compareTo(a.getValue()));
-        for (Map.Entry<Long, Integer> e : list) {
-            ServerThread st = findClient(e.getKey());
-            String name = (st != null) ? st.getDisplayName() : ("Player#" + e.getKey());
-            broadcast(null, name + ": " + e.getValue() + " points");
-        }
-    }
-
-    // ====================== Sync: Question / User List / Timer ======================
-
-    private void sendQuestionToAll() {
-        for (ServerThread client : getClients()) sendQuestionToClient(client);
-    }
-
-    private void sendQuestionToClient(ServerThread client) {
-        if (currentQuestion == null) return;
-        QAPayload qp = new QAPayload();
-        qp.setPayloadType(PayloadType.QUESTION); // Option B: classic name
-        qp.setClientId(Constants.DEFAULT_CLIENT_ID);
-        qp.setCategory(currentQuestion.category);
-        qp.setQuestionText(currentQuestion.text);
-        qp.setAnswers(new ArrayList<>(currentQuestion.answers));
-        client.sendPayload(qp);
-    }
-
-    private void sendUserListToAll() {
-        // Order stable across clients (sorted by points desc, then id)
-        ArrayList<ServerThread> snapshot = new ArrayList<>(getClients());
-        snapshot.sort((a, b) -> {
-            int pa = points.getOrDefault(a.getClientId(), 0);
-            int pb = points.getOrDefault(b.getClientId(), 0);
-            if (pb != pa) return Integer.compare(pb, pa);
-            return Long.compare(a.getClientId(), b.getClientId());
-        });
-
-        UserListPayload up = new UserListPayload();
-        up.setPayloadType(PayloadType.USER_LIST); // Option B: classic name
-        up.setClientId(Constants.DEFAULT_CLIENT_ID);
-
-        for (ServerThread client : snapshot) {
-            long id = client.getClientId();
-            String name = client.getDisplayName();
-            int pts = points.getOrDefault(id, 0);
-            boolean isLocked = lockedThisRound.getOrDefault(id, false);
-            boolean isAway = away.getOrDefault(id, false);
-            boolean isSpectator = spectator.getOrDefault(id, false);
-            up.addUser(id, name, pts, isLocked, isAway, isSpectator);
-        }
-
-        for (ServerThread client : getClients()) client.sendPayload(up);
-    }
-
-    private void startTimer() {
-        stopTimer();
-        timerSecondsLeft = ROUND_SECONDS;
-
-        timerThread = new Thread(() -> {
-            try {
-                while (timerSecondsLeft >= 0 && sessionActive && currentQuestion != null) {
-                    sendTimerToAll();
-                    Thread.sleep(1000);
-                    timerSecondsLeft--;
-                }
-            } catch (InterruptedException ignored) { }
-
-            if (sessionActive && currentQuestion != null && timerSecondsLeft < 0) {
-                synchronized (GameRoom.this) { endRound("Time is up!"); }
-            }
-        });
-        timerThread.start();
-    }
-
-    private void stopTimer() {
-        if (timerThread != null && timerThread.isAlive()) timerThread.interrupt();
-        timerThread = null;
-    }
-
-    private void sendTimerToAll() {
-        Payload p = new Payload();
-        p.setPayloadType(PayloadType.TIMER);
-        p.setClientId(Constants.DEFAULT_CLIENT_ID);
-        p.setMessage(Integer.toString(timerSecondsLeft));
-        for (ServerThread client : getClients()) client.sendPayload(p);
-    }
-}
+        ArrayList<Map.Entry<Long, Integer>> list =

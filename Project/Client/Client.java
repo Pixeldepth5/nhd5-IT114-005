@@ -1,9 +1,16 @@
 // UCID: nhd5
 // Date: December 8, 2025
-// Description: TriviaGuessGame Client – Swing UI + networking (host-controlled session)
-// References:
+// Description: TriviaGuessGame Client – Swing UI + networking (MS1–MS3)
+//  - Connect panel (Username / Host / Port)
+//  - Ready panel (READY button, Away, Spectator, Categories)
+//  - Game panel (Question, Answers, Timer)
+//  - User list (name, id, points, locked/away/spectator)
+//  - Chat panel (right side, separate from Game Events)
+//  - Game Events panel (lock-ins, points, scoreboard, away/spectator messages)
+// References (beginner-friendly):
 //  - https://www.w3schools.com/java/java_swing.asp
 //  - https://www.w3schools.com/java/java_arraylist.asp
+//  - https://www.w3schools.com/java/java_hashmap.asp
 
 package Client;
 
@@ -37,30 +44,39 @@ public class Client {
     // ===================== UI fields =====================
     private JFrame frame;
 
+    // Connection
     private JTextField txtUser;
     private JTextField txtHost;
     private JTextField txtPort;
     private JButton btnConnect;
+    private JLabel lblConnectHint;
 
+    // Ready + options
     private JButton btnReady;
     private JCheckBox chkAway;
     private JCheckBox chkSpectator;
     private JButton btnAddQ;
 
+    // Categories
     private JCheckBox chkGeo;
     private JCheckBox chkSci;
     private JCheckBox chkMath;
     private JCheckBox chkHist;
 
-    private DefaultListModel<String> userModel;
-    private JList<String> lstUsers;
+    // User list
+    private DefaultListModel<User> userModel;
+    private JList<User> lstUsers;
 
+    // Chat + events
+    private JTextArea txtChat;
+    private JTextField txtChatInput;
+    private JButton btnSendChat;
     private JTextArea txtEvents;
 
+    // Game area
     private JLabel lblCategory;
     private JLabel lblQuestion;
     private JLabel lblTimer;
-
     private JButton[] answerButtons = new JButton[4];
 
     // Simple cache of users by id
@@ -79,7 +95,7 @@ public class Client {
     private void buildUI() {
         frame = new JFrame("TriviaGuessGame – nhd5");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(1100, 650);
+        frame.setSize(1150, 700);
         frame.setLocationRelativeTo(null);
         frame.setLayout(new BorderLayout());
         frame.getContentPane().setBackground(new Color(244, 240, 255));
@@ -90,7 +106,7 @@ public class Client {
 
         // Main title – Behind The Nineties
         JLabel lblTitle = new JLabel("Trivia Guess Game", SwingConstants.CENTER);
-        TextFX.setTitleFont(lblTitle);
+        TextFX.setTitleFont(lblTitle); // Behind the Nineties
         lblTitle.setForeground(new Color(40, 40, 70));
         lblTitle.setBorder(new EmptyBorder(5, 5, 15, 5));
         root.add(lblTitle, BorderLayout.NORTH);
@@ -99,7 +115,7 @@ public class Client {
         center.setOpaque(false);
         center.add(buildLeftColumn(), BorderLayout.WEST);
         center.add(buildGamePanel(), BorderLayout.CENTER);
-        center.add(buildEventsPanel(), BorderLayout.EAST);
+        center.add(buildRightColumn(), BorderLayout.EAST);
 
         root.add(center, BorderLayout.CENTER);
         frame.add(root, BorderLayout.CENTER);
@@ -127,8 +143,9 @@ public class Client {
         panel.setBorder(new TitledBorder(
                 new LineBorder(new Color(210, 210, 230)),
                 "Connection"));
-        ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
-        ((TitledBorder) panel.getBorder()).setTitleColor(new Color(60, 60, 90));
+        TitledBorder tb = (TitledBorder) panel.getBorder();
+        tb.setTitleFont(TextFX.getSubtitleFont());
+        tb.setTitleColor(new Color(60, 60, 90));
 
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(2, 4, 2, 4);
@@ -156,13 +173,22 @@ public class Client {
         txtPort = new JTextField("3000", 6);
         panel.add(txtPort, c);
 
-        // Connect
+        // Connect button
         c.gridx = 2;
         c.gridwidth = 2;
         btnConnect = new JButton("Connect");
         stylePrimaryButton(btnConnect);
         btnConnect.addActionListener(this::connectClicked);
         panel.add(btnConnect, c);
+
+        // Hint label (shows step to click READY after connecting)
+        c.gridx = 0;
+        c.gridy = 2;
+        c.gridwidth = 4;
+        lblConnectHint = new JLabel("Step 1: Enter name, host, port and click Connect.");
+        TextFX.setSubtitleFont(lblConnectHint);
+        lblConnectHint.setForeground(new Color(80, 80, 110));
+        panel.add(lblConnectHint, c);
 
         return panel;
     }
@@ -172,9 +198,10 @@ public class Client {
         panel.setLayout(new BorderLayout(5, 5));
         panel.setBorder(new TitledBorder(
                 new LineBorder(new Color(210, 210, 230)),
-                "Options"));
-        ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
-        ((TitledBorder) panel.getBorder()).setTitleColor(new Color(60, 60, 90));
+                "Ready & Options"));
+        TitledBorder tb = (TitledBorder) panel.getBorder();
+        tb.setTitleFont(TextFX.getSubtitleFont());
+        tb.setTitleColor(new Color(60, 60, 90));
 
         // Ready + Add Question
         JPanel r1 = new JPanel(new FlowLayout(FlowLayout.LEFT));
@@ -183,6 +210,11 @@ public class Client {
         stylePrimaryButton(btnReady);
         btnReady.addActionListener(e -> sendCommand("/ready"));
         r1.add(btnReady);
+
+        JLabel lblReadyHint = new JLabel("Step 2: Click READY when you want to play.");
+        TextFX.setSubtitleFont(lblReadyHint);
+        lblReadyHint.setForeground(new Color(80, 80, 110));
+        r1.add(lblReadyHint);
 
         btnAddQ = new JButton("Add Question");
         styleSecondaryButton(btnAddQ);
@@ -211,11 +243,12 @@ public class Client {
         catPanel.setLayout(new FlowLayout(FlowLayout.LEFT));
         catPanel.setBorder(new TitledBorder(
                 new LineBorder(new Color(220, 215, 235)),
-                "Categories"));
-        ((TitledBorder) catPanel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
-        ((TitledBorder) catPanel.getBorder()).setTitleColor(new Color(60, 60, 90));
+                "Categories (host during ready check)"));
+        TitledBorder tb2 = (TitledBorder) catPanel.getBorder();
+        tb2.setTitleFont(TextFX.getSubtitleFont());
+        tb2.setTitleColor(new Color(60, 60, 90));
 
-        chkGeo = new JCheckBox("Geo");
+        chkGeo = new JCheckBox("Geography");
         chkSci = new JCheckBox("Science");
         chkMath = new JCheckBox("Math");
         chkHist = new JCheckBox("History");
@@ -239,8 +272,9 @@ public class Client {
         panel.setBorder(new TitledBorder(
                 new LineBorder(new Color(210, 210, 230)),
                 "Users"));
-        ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
-        ((TitledBorder) panel.getBorder()).setTitleColor(new Color(60, 60, 90));
+        TitledBorder tb = (TitledBorder) panel.getBorder();
+        tb.setTitleFont(TextFX.getSubtitleFont());
+        tb.setTitleColor(new Color(60, 60, 90));
 
         userModel = new DefaultListModel<>();
         lstUsers = new JList<>(userModel);
@@ -249,8 +283,84 @@ public class Client {
         lstUsers.setSelectionBackground(new Color(210, 200, 245));
         TextFX.setSubtitleFont(lstUsers);
 
+        // Custom cell renderer to gray out AWAY, tag SPECTATOR, etc.
+        lstUsers.setCellRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(
+                    JList<?> list, Object value, int index,
+                    boolean isSelected, boolean cellHasFocus) {
+
+                JLabel lbl = (JLabel) super.getListCellRendererComponent(
+                        list, value, index, isSelected, cellHasFocus);
+
+                if (value instanceof User) {
+                    User u = (User) value;
+                    lbl.setText(u.toDisplayString());
+                    if (u.isAway()) {
+                        lbl.setForeground(new Color(140, 140, 160)); // gray-ish
+                    } else if (u.isSpectator()) {
+                        lbl.setForeground(new Color(80, 120, 180)); // blue-ish
+                    } else {
+                        lbl.setForeground(new Color(40, 40, 70));
+                    }
+                }
+                TextFX.setSubtitleFont(lbl);
+                return lbl;
+            }
+        });
+
         panel.add(new JScrollPane(lstUsers), BorderLayout.CENTER);
-        panel.setPreferredSize(new Dimension(280, 260));
+        panel.setPreferredSize(new Dimension(290, 260));
+        return panel;
+    }
+
+    private JPanel buildRightColumn() {
+        JPanel col = new JPanel();
+        col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
+        col.setOpaque(false);
+        col.setPreferredSize(new Dimension(300, 0));
+
+        col.add(buildChatPanel());
+        col.add(Box.createVerticalStrut(8));
+        col.add(buildEventsPanel());
+
+        return col;
+    }
+
+    private JPanel buildChatPanel() {
+        RoundedPanel panel = new RoundedPanel();
+        panel.setLayout(new BorderLayout());
+        panel.setBorder(new TitledBorder(
+                new LineBorder(new Color(210, 210, 230)),
+                "Chat"));
+        TitledBorder tb = (TitledBorder) panel.getBorder();
+        tb.setTitleFont(TextFX.getSubtitleFont());
+        tb.setTitleColor(new Color(60, 60, 90));
+
+        txtChat = new JTextArea();
+        txtChat.setEditable(false);
+        txtChat.setLineWrap(true);
+        txtChat.setWrapStyleWord(true);
+        txtChat.setBackground(new Color(248, 246, 255));
+        txtChat.setBorder(new EmptyBorder(5, 5, 5, 5));
+        TextFX.setSubtitleFont(txtChat);
+
+        panel.add(new JScrollPane(txtChat), BorderLayout.CENTER);
+
+        JPanel inputPanel = new JPanel(new BorderLayout(5, 5));
+        inputPanel.setOpaque(false);
+        txtChatInput = new JTextField();
+        TextFX.setSubtitleFont(txtChatInput);
+        btnSendChat = new JButton("Send");
+        styleSecondaryButton(btnSendChat);
+        btnSendChat.addActionListener(e -> sendChat());
+
+        inputPanel.add(txtChatInput, BorderLayout.CENTER);
+        inputPanel.add(btnSendChat, BorderLayout.EAST);
+        inputPanel.setBorder(new EmptyBorder(5, 5, 5, 5));
+
+        panel.add(inputPanel, BorderLayout.SOUTH);
+
         return panel;
     }
 
@@ -260,9 +370,9 @@ public class Client {
         panel.setBorder(new TitledBorder(
                 new LineBorder(new Color(210, 210, 230)),
                 "Game Events"));
-        ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
-        ((TitledBorder) panel.getBorder()).setTitleColor(new Color(60, 60, 90));
-        panel.setPreferredSize(new Dimension(260, 0));
+        TitledBorder tb = (TitledBorder) panel.getBorder();
+        tb.setTitleFont(TextFX.getSubtitleFont());
+        tb.setTitleColor(new Color(60, 60, 90));
 
         txtEvents = new JTextArea();
         txtEvents.setEditable(false);
@@ -273,6 +383,7 @@ public class Client {
         TextFX.setSubtitleFont(txtEvents);
 
         panel.add(new JScrollPane(txtEvents), BorderLayout.CENTER);
+        panel.setPreferredSize(new Dimension(260, 220));
         return panel;
     }
 
@@ -282,8 +393,9 @@ public class Client {
         panel.setBorder(new TitledBorder(
                 new LineBorder(new Color(210, 210, 230)),
                 "Game"));
-        ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
-        ((TitledBorder) panel.getBorder()).setTitleColor(new Color(60, 60, 90));
+        TitledBorder tb = (TitledBorder) panel.getBorder();
+        tb.setTitleFont(TextFX.getSubtitleFont());
+        tb.setTitleColor(new Color(60, 60, 90));
 
         // Top bar
         JPanel top = new JPanel(new BorderLayout());
@@ -326,7 +438,7 @@ public class Client {
 
     private JLabel makeLabel(String text) {
         JLabel lbl = new JLabel(text);
-        TextFX.setSubtitleFont(lbl);
+        TextFX.setSubtitleFont(lbl); // Visby CF
         return lbl;
     }
 
@@ -368,6 +480,8 @@ public class Client {
             connected = true;
 
             appendEvent("Connected to server " + host + ":" + port);
+            lblConnectHint.setText("Connected as " + txtUser.getText().trim()
+                    + " — Step 2: Click READY to join the next game.");
 
             ConnectionPayload cp = new ConnectionPayload();
             cp.setPayloadType(PayloadType.CLIENT_CONNECT);
@@ -405,13 +519,34 @@ public class Client {
                 clientId = p.getClientId();
                 appendEvent("Your ID: " + clientId);
             }
-            case MESSAGE -> appendEvent(p.getMessage());
+            case MESSAGE -> handleMessagePayload(p);
             case TIMER -> lblTimer.setText("Timer: " + p.getMessage());
             case POINTS_UPDATE -> appendEvent(p.getMessage());
             case QUESTION -> handleQA((QAPayload) p);
             case USER_LIST -> handleUserList((UserListPayload) p);
             default -> {
-                // ignore
+                // ignore other types for now
+            }
+        }
+    }
+
+    // Split MESSAGE payloads into Chat vs Game Events
+    private void handleMessagePayload(Payload p) {
+        String msg = p.getMessage();
+        if (msg == null) return;
+
+        if (msg.startsWith("[CHAT] ")) {
+            appendChat(msg.substring(7));
+        } else {
+            appendEvent(msg);
+
+            // If game over, hint user to click READY again
+            if (msg.contains("GAME OVER")) {
+                lblQuestion.setText("Game over. Click READY to play again.");
+                for (JButton btn : answerButtons) {
+                    btn.setEnabled(false);
+                    btn.setBackground(new Color(240, 236, 255));
+                }
             }
         }
     }
@@ -452,7 +587,7 @@ public class Client {
 
             User u = new User(id, name, pts, locked, away, spec);
             users.put(id, u);
-            userModel.addElement(u.toDisplayString());
+            userModel.addElement(u);
         }
     }
 
@@ -467,6 +602,7 @@ public class Client {
             return;
         }
 
+        // Send numeric index (0–3) as per server logic
         sendCommand("/answer " + index);
         lockedThisRound = true;
 
@@ -511,7 +647,7 @@ public class Client {
             return;
         }
 
-        String cat = JOptionPane.showInputDialog(frame, "Category:");
+        String cat = JOptionPane.showInputDialog(frame, "Category (geography, science, math, history, movies, sports):");
         if (cat == null || cat.trim().isEmpty()) return;
 
         String q = JOptionPane.showInputDialog(frame, "Question:");
@@ -521,12 +657,35 @@ public class Client {
         String a2 = JOptionPane.showInputDialog(frame, "Answer B:");
         String a3 = JOptionPane.showInputDialog(frame, "Answer C:");
         String a4 = JOptionPane.showInputDialog(frame, "Answer D:");
-        String correct = JOptionPane.showInputDialog(frame, "Correct index (0-3):");
+        String correct = JOptionPane.showInputDialog(frame, "Correct index (0=A, 1=B, 2=C, 3=D):");
 
         if (a1 == null || a2 == null || a3 == null || a4 == null || correct == null) return;
 
         String line = cat + "|" + q + "|" + a1 + "|" + a2 + "|" + a3 + "|" + a4 + "|" + correct;
         sendCommand("/addq " + line);
+    }
+
+    private void sendChat() {
+        if (!connected) {
+            appendEvent("Not connected.");
+            return;
+        }
+        if (isSpectator) {
+            appendEvent("You are a spectator and cannot send chat messages.");
+            return;
+        }
+
+        String text = txtChatInput.getText().trim();
+        if (text.isEmpty()) return;
+
+        // Plain text (no slash) → treated as chat on server side
+        Payload p = new Payload();
+        p.setPayloadType(PayloadType.MESSAGE);
+        p.setClientId(clientId);
+        p.setMessage(text);
+        send(p);
+
+        txtChatInput.setText("");
     }
 
     private void sendCommand(String text) {
@@ -551,6 +710,11 @@ public class Client {
     private void appendEvent(String msg) {
         txtEvents.append(msg + "\n");
         txtEvents.setCaretPosition(txtEvents.getDocument().getLength());
+    }
+
+    private void appendChat(String msg) {
+        txtChat.append(msg + "\n");
+        txtChat.setCaretPosition(txtChat.getDocument().getLength());
     }
 
     // ===================== Helper inner class =====================
