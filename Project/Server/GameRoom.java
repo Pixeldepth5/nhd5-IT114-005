@@ -546,3 +546,59 @@ public class GameRoom extends Room {
     private void showScoreboard(String header) {
         broadcast(null, header);
         ArrayList<Map.Entry<Long, Integer>> list =
+                new ArrayList<>(points.entrySet());
+
+        list.sort((a, b) -> b.getValue().compareTo(a.getValue())); // highest first
+
+        for (Map.Entry<Long, Integer> e : list) {
+            long id = e.getKey();
+            int pts = e.getValue();
+            ServerThread st = findClient(id);
+            String name = (st != null) ? st.getDisplayName() : ("Player#" + id);
+            broadcast(null, name + ": " + pts + " points");
+        }
+    }
+
+    // ====================== Timer Sending ======================
+
+    private void startTimer() {
+        stopTimer();
+        timerSecondsLeft = ROUND_SECONDS;
+
+        timerThread = new Thread(() -> {
+            try {
+                while (timerSecondsLeft >= 0 && sessionActive && currentQuestion != null) {
+                    sendTimerToAll();
+                    Thread.sleep(1000);
+                    timerSecondsLeft--;
+                }
+            } catch (InterruptedException ignored) {}
+
+            if (sessionActive && currentQuestion != null && timerSecondsLeft < 0) {
+                synchronized (GameRoom.this) {
+                    endRound("Time is up!");
+                }
+            }
+        });
+
+        timerThread.start();
+    }
+
+    private void stopTimer() {
+        if (timerThread != null && timerThread.isAlive()) {
+            timerThread.interrupt();
+        }
+        timerThread = null;
+    }
+
+    private void sendTimerToAll() {
+        Payload p = new Payload();
+        p.setPayloadType(PayloadType.TIMER);
+        p.setClientId(Constants.DEFAULT_CLIENT_ID);
+        p.setMessage(Integer.toString(timerSecondsLeft));
+
+        for (ServerThread client : getClients()) {
+            client.sendPayload(p);
+        }
+    }
+}
