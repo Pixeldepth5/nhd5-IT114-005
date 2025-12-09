@@ -40,7 +40,7 @@ public class Room {
     protected synchronized void addClient(ServerThread client) {
         client.setCurrentRoom(this);
         clients.put(client.getClientId(), client);
-        broadcast(null, client.getDisplayName() + " joined " + name);
+        broadcast(null, "user \"" + client.getDisplayName() + "\" has joined the " + name);
     }
 
     /**

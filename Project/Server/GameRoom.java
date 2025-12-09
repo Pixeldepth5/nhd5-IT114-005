@@ -222,7 +222,7 @@ private void handleReady(ServerThread sender) {
         broadcast(null, sender.getDisplayName() + " is the session host.");
     }
 
-    broadcast(null, sender.getDisplayName() + " is ready.");
+    broadcast(null, "user \"" + sender.getDisplayName() + "\" is ready");
     sendUserListToAll();
 
     if (!sessionActive && allActivePlayersReady()) {

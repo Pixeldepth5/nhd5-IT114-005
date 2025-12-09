@@ -35,6 +35,7 @@ import javax.swing.border.TitledBorder;
   private long clientId = -1;
 
   private boolean lockedThisRound = false;
+  private int selectedAnswerIndex = -1;  // Selected answer before locking
   private boolean isAway = false;
   private boolean isSpectator = false;
   private boolean isReady = false;
@@ -77,6 +78,7 @@ import javax.swing.border.TitledBorder;
   private JTextArea txtQuestion;  // Changed from JLabel to JTextArea for full question display
   private JLabel lblTimer;
   private JButton[] answerButtons = new JButton[4];
+  private JButton btnLockAnswer;
 
   public static void main(String[] args) {
   SwingUtilities.invokeLater(Client::new);
@@ -594,12 +596,12 @@ import javax.swing.border.TitledBorder;
   // Create panel for answer buttons (2x2 grid)
   JPanel answers = createAnswerButtons();
   
-  // Create submit button
-  JButton btnSubmit = createSubmitButton();
+  // Create lock button
+  btnLockAnswer = createSubmitButton();
   JPanel submitPanel = new JPanel();
   submitPanel.setOpaque(false);
   submitPanel.setBorder(new EmptyBorder(10, 0, 10, 0));
-  submitPanel.add(btnSubmit);
+  submitPanel.add(btnLockAnswer);
   
   // Combine answers and submit in a vertical container
   JPanel container = new JPanel();
@@ -633,16 +635,16 @@ import javax.swing.border.TitledBorder;
   }
 
   /**
-   * Helper method: Creates the submit button.
-   * Note: Answer submission is actually handled when clicking answer buttons.
-   * @return A styled JButton for submitting answers
+   * Helper method: Creates the lock button.
+   * Locks in the selected answer when clicked.
+   * @return A styled JButton for locking in answers
    */
   private JButton createSubmitButton() {
-  JButton btn = new JButton("SUBMIT");
+  JButton btn = new JButton("LOCK");
   stylePrimary(btn);
-  btn.addActionListener(e -> {
-      // Submit is handled by answer selection, but keep for UI consistency
-  });
+  btn.setEnabled(false);  // Disabled until answer is selected
+  btn.setVisible(true);   // Always visible
+  btn.addActionListener(e -> lockAnswer());
   return btn;
   }
 
@@ -664,10 +666,13 @@ import javax.swing.border.TitledBorder;
   private void connectClicked(ActionEvent e) {
   if (connected) return;
 
-  if (currentName == null || currentName.isEmpty()) {
-      lblConnectHint.setText("Please set your name first!");
+  // Get username from text field
+  String name = txtUser.getText().trim();
+  if (name.isEmpty()) {
+      lblConnectHint.setText("Please enter your name first!");
       return;
   }
+  currentName = name;  // Update currentName from text field
 
   try {
       String host = txtHost.getText().trim();
@@ -680,7 +685,7 @@ import javax.swing.border.TitledBorder;
 
       appendEvent("Connected to server.");
       lblConnectHint.setText("Connected as " + currentName + ". Step 2: Check Ready.");
-      btnConnect.setEnabled(false);
+      btnConnect.setVisible(false);  // Hide the button after connecting
 
       ConnectionPayload cp = new ConnectionPayload();
       cp.setPayloadType(PayloadType.CLIENT_CONNECT);
@@ -764,6 +769,7 @@ import javax.swing.border.TitledBorder;
 
   private void handleQA(QAPayload q) {
   lockedThisRound = false;
+  selectedAnswerIndex = -1;  // Reset selected answer
   lblCategory.setText("Category: " + q.getCategory());
   // Set full question text in text area
   txtQuestion.setText(q.getQuestionText());
@@ -783,6 +789,8 @@ import javax.swing.border.TitledBorder;
           answerButtons[i].setBackground(new Color(240, 240, 240));
       }
   }
+  // Reset lock button
+  btnLockAnswer.setEnabled(false);
   }
 
   private void handleUserList(UserListPayload up) {
@@ -809,13 +817,53 @@ import javax.swing.border.TitledBorder;
   private void answerClicked(int idx) {
   if (!connected || lockedThisRound || isSpectator || isAway) return;
 
-  sendCommand("/answer " + idx);
+  // Store selected answer index (don't lock in yet)
+  selectedAnswerIndex = idx;
+
+  // Update button colors: selected = green, others = red, all with black text
+  for (int i = 0; i < answerButtons.length; i++) {
+      answerButtons[i].setOpaque(true);  // Ensure colors show
+      if (i == idx) {
+          // Selected button: green background, black text
+          answerButtons[i].setBackground(new Color(144, 238, 144));  // Light green
+          answerButtons[i].setForeground(Color.BLACK);
+      } else {
+          // Other buttons: red background, black text
+          answerButtons[i].setBackground(new Color(255, 182, 193));  // Light red/pink
+          answerButtons[i].setForeground(Color.BLACK);
+      }
+  }
+
+  // Enable the lock button
+  btnLockAnswer.setEnabled(true);
+  }
+
+  /**
+   * Locks in the selected answer and sends it to the server.
+   */
+  private void lockAnswer() {
+  if (!connected || lockedThisRound || selectedAnswerIndex < 0 || isSpectator || isAway) return;
+
+  // Send answer to server
+  sendCommand("/answer " + selectedAnswerIndex);
   lockedThisRound = true;
 
-  for (JButton btn : answerButtons) btn.setEnabled(false);
-  // Light blue highlight when answer is selected matching mockup
-  answerButtons[idx].setBackground(new Color(200, 220, 255));
-  answerButtons[idx].setForeground(new Color(30, 60, 120));
+  // Disable all answer buttons but keep colors (green/red)
+  for (int i = 0; i < answerButtons.length; i++) {
+      answerButtons[i].setEnabled(false);
+      // Ensure colors persist after disabling by setting opaque
+      answerButtons[i].setOpaque(true);
+      if (i == selectedAnswerIndex) {
+          // Keep selected button green
+          answerButtons[i].setBackground(new Color(144, 238, 144));  // Light green
+          answerButtons[i].setForeground(Color.BLACK);
+      } else {
+          // Keep other buttons red
+          answerButtons[i].setBackground(new Color(255, 182, 193));  // Light red/pink
+          answerButtons[i].setForeground(Color.BLACK);
+      }
+  }
+  btnLockAnswer.setEnabled(false);
   }
 
   /**
@@ -990,6 +1038,7 @@ import javax.swing.border.TitledBorder;
    * @param btn The button to style
    */
   private void styleAnswer(JButton btn) {
+  btn.setOpaque(true);  // Make sure button is opaque so colors show
   btn.setBackground(Color.WHITE);
   btn.setForeground(new Color(30, 60, 120));
   btn.setBorder(new LineBorder(new Color(200, 200, 200), 1, true));
