@@ -32,6 +32,10 @@ public abstract class BaseServerThread extends Thread {
     public Room getCurrentRoom() { return currentRoom; }
     public void setCurrentRoom(Room room) { currentRoom = room; }
 
+    /**
+     * Main thread loop - continuously reads payloads from client and processes them.
+     * Uses ObjectInputStream/ObjectOutputStream for serialized object communication.
+     */
     @Override
     public void run() {
         try (ObjectOutputStream out = new ObjectOutputStream(client.getOutputStream());
@@ -41,10 +45,11 @@ public abstract class BaseServerThread extends Thread {
             isRunning = true;
             Payload fromClient;
 
+            // Continuously read payloads from client until connection closes
             while (isRunning) {
                 fromClient = (Payload) in.readObject();
                 if (fromClient != null) {
-                    processPayload(fromClient);
+                    processPayload(fromClient); // Forward to subclass for handling
                 } else {
                     break;
                 }
@@ -52,7 +57,7 @@ public abstract class BaseServerThread extends Thread {
         } catch (Exception e) {
             System.out.println("Client disconnected.");
         } finally {
-            // ✅ FIX: safely cast only if this thread is an instance of ServerThread
+            // Notify room of disconnect (only if this is a ServerThread instance)
             if (currentRoom != null && this instanceof ServerThread) {
                 currentRoom.handleDisconnect((ServerThread) this);
             }

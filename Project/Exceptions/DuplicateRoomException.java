@@ -1,7 +1,8 @@
 // UCID: nhd5
 // Date: November 3, 2025
-// Description: TriviaGuessGame DuplicateRoomException – thrown if a room already exists
-// Reference: https://www.w3schools.com/java/
+// Description: DuplicateRoomException – thrown when trying to create a room that already exists.
+//              Thrown by Server.createRoom() if room name is already in use.
+// Reference: https://www.w3schools.com/java/java_try_catch.asp
 
 package Exceptions;
 

@@ -1,7 +1,8 @@
 // UCID: nhd5
 // Date: November 3, 2025
-// Description: TriviaGuessGame RoomNotFoundException – thrown if a room cannot be found
-// Reference: https://www.w3schools.com/java/
+// Description: RoomNotFoundException – thrown when trying to join a room that doesn't exist.
+//              Thrown by Server.joinRoom() if the requested room name is not found.
+// Reference: https://www.w3schools.com/java/java_try_catch.asp
 
 package Exceptions;
 

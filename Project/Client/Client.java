@@ -207,7 +207,7 @@ import javax.swing.border.TitledBorder;
    * @return A styled JButton for connecting to the server
    */
   private JButton createConnectButton() {
-  JButton btn = new JButton("CONNECT");
+  JButton btn = new JButton("Connect");
   stylePrimary(btn);
   btn.addActionListener(this::connectClicked);
   return btn;
@@ -218,7 +218,7 @@ import javax.swing.border.TitledBorder;
    * @return A JLabel with connection instructions
    */
   private JLabel createConnectionHint() {
-  JLabel hint = new JLabel("Step 1: Set your name, then click Connect.");
+  JLabel hint = new JLabel("Step 1: Enter your name above, then click the Connect button below.");
   hint.setForeground(new Color(100, 100, 100));
   TextFX.setSubtitleFont(hint);
   return hint;

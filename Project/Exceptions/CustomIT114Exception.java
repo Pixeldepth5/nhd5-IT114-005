@@ -1,7 +1,8 @@
 // UCID: nhd5
 // Date: November 3, 2025
-// Description: TriviaGuessGame Custom base exception class for IT114 Milestone 1
-// Reference: https://www.w3schools.com/java/
+// Description: CustomIT114Exception – base exception class for all custom exceptions in this project.
+//              Provides a common exception hierarchy for room-related errors.
+// Reference: https://www.w3schools.com/java/java_try_catch.asp
 
 package Exceptions;
 
