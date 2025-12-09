@@ -135,7 +135,12 @@ import javax.swing.border.TitledBorder;
   // ===========================================================
   // CONNECTION PANEL
   // ===========================================================
+  /**
+   * Creates the connection panel with username, host, port fields and connect button.
+   * This panel allows users to enter their connection details and connect to the server.
+   */
   private JPanel buildConnectionPanel() {
+  // Create the main panel with white background
   JPanel panel = new JPanel();
   panel.setLayout(new GridBagLayout());
   panel.setBackground(Color.WHITE);
@@ -143,60 +148,89 @@ import javax.swing.border.TitledBorder;
   ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
   ((TitledBorder) panel.getBorder()).setTitleColor(new Color(30, 60, 120));
 
+  // GridBagConstraints helps position components in a grid layout
   GridBagConstraints c = new GridBagConstraints();
   c.insets = new Insets(2, 4, 2, 4);
-  c.gridy = 0;
+  c.gridy = 0; // Start at row 0
 
-  // Username field
+  // Add username field (row 0)
   c.gridx = 0; panel.add(label("Username:"), c);
   c.gridx = 1; c.gridwidth = 2; c.fill = GridBagConstraints.HORIZONTAL;
-  txtUser = new JTextField("Player", 15); 
-  txtUser.setBackground(Color.WHITE);
-  txtUser.setForeground(new Color(30, 30, 30));
-  txtUser.setBorder(new LineBorder(new Color(200, 200, 200), 1));
+  txtUser = createTextField("Player", 15);
   panel.add(txtUser, c);
   
-  // Host field
+  // Add host field (row 1)
   c.gridx = 0; c.gridy = 1; c.gridwidth = 1;
   panel.add(label("Host:"), c);
   c.gridx = 1; c.gridwidth = 2; c.fill = GridBagConstraints.HORIZONTAL;
-  txtHost = new JTextField("localhost", 15); 
-  txtHost.setBackground(Color.WHITE);
-  txtHost.setForeground(new Color(30, 30, 30));
-  txtHost.setBorder(new LineBorder(new Color(200, 200, 200), 1));
+  txtHost = createTextField("localhost", 15);
   panel.add(txtHost, c);
 
-  // Port field
+  // Add port field (row 2)
   c.gridx = 0; c.gridy = 2; c.gridwidth = 1; c.fill = GridBagConstraints.NONE;
   panel.add(label("Port:"), c);
   c.gridx = 1; c.gridwidth = 2; c.fill = GridBagConstraints.HORIZONTAL;
-  txtPort = new JTextField("3000", 15); 
-  txtPort.setBackground(Color.WHITE);
-  txtPort.setForeground(new Color(30, 30, 30));
-  txtPort.setBorder(new LineBorder(new Color(200, 200, 200), 1));
+  txtPort = createTextField("3000", 15);
   panel.add(txtPort, c);
 
-  // Connect button
+  // Add connect button (row 3)
   c.gridx = 0; c.gridy = 3; c.gridwidth = 3; c.fill = GridBagConstraints.NONE;
-  btnConnect = new JButton("CONNECT");
-  stylePrimary(btnConnect);
-  btnConnect.addActionListener(this::connectClicked);
+  btnConnect = createConnectButton();
   panel.add(btnConnect, c);
 
-  // Hint
+  // Add hint label (row 4)
   c.gridx = 0; c.gridy = 4; c.gridwidth = 3;
-  lblConnectHint = new JLabel("Step 1: Set your name, then click Connect.");
-  lblConnectHint.setForeground(new Color(100, 100, 100));
-  TextFX.setSubtitleFont(lblConnectHint);
+  lblConnectHint = createConnectionHint();
   panel.add(lblConnectHint, c);
 
   return panel;
   }
 
+  /**
+   * Helper method: Creates a styled text field for user input.
+   * @param defaultText The default text to show in the field
+   * @param columns The width of the text field
+   * @return A styled JTextField
+   */
+  private JTextField createTextField(String defaultText, int columns) {
+  JTextField field = new JTextField(defaultText, columns);
+  field.setBackground(Color.WHITE);
+  field.setForeground(new Color(30, 30, 30));
+  field.setBorder(new LineBorder(new Color(200, 200, 200), 1));
+  return field;
+  }
+
+  /**
+   * Helper method: Creates the connect button with styling and click handler.
+   * @return A styled JButton for connecting to the server
+   */
+  private JButton createConnectButton() {
+  JButton btn = new JButton("CONNECT");
+  stylePrimary(btn);
+  btn.addActionListener(this::connectClicked);
+  return btn;
+  }
+
+  /**
+   * Helper method: Creates the hint label that shows connection instructions.
+   * @return A JLabel with connection instructions
+   */
+  private JLabel createConnectionHint() {
+  JLabel hint = new JLabel("Step 1: Set your name, then click Connect.");
+  hint.setForeground(new Color(100, 100, 100));
+  TextFX.setSubtitleFont(hint);
+  return hint;
+  }
+
   // ===========================================================
-  // OPTIONS PANEL
+  // OPTIONS PANEL (STATUS PANEL)
   // ===========================================================
+  /**
+   * Creates the status panel with Ready, Spectator, and Away checkboxes.
+   * This panel allows users to set their game status.
+   */
   private JPanel buildOptionsPanel() {
+  // Create the main panel
   JPanel panel = new JPanel();
   panel.setLayout(new BorderLayout(8, 8));
   panel.setBackground(Color.WHITE);
@@ -204,13 +238,45 @@ import javax.swing.border.TitledBorder;
   ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
   ((TitledBorder) panel.getBorder()).setTitleColor(new Color(30, 60, 120));
 
-  // Status checkboxes matching mockup
-  JPanel statusContainer = new JPanel();
-  statusContainer.setLayout(new BoxLayout(statusContainer, BoxLayout.Y_AXIS));
-  statusContainer.setOpaque(false);
-  statusContainer.setBorder(new EmptyBorder(10, 10, 10, 10));
+  // Create container for all status checkboxes
+  JPanel statusContainer = createStatusCheckboxesContainer();
+  panel.add(statusContainer, BorderLayout.CENTER);
+  return panel;
+  }
+
+  /**
+   * Helper method: Creates a container with all status checkboxes (Ready, Spectator, Away).
+   * @return A JPanel containing all status checkboxes
+   */
+  private JPanel createStatusCheckboxesContainer() {
+  JPanel container = new JPanel();
+  container.setLayout(new BoxLayout(container, BoxLayout.Y_AXIS));
+  container.setOpaque(false);
+  container.setBorder(new EmptyBorder(10, 10, 10, 10));
   
-  // Ready checkbox
+  // Add Ready checkbox
+  JCheckBox chkReady = createReadyCheckbox();
+  container.add(chkReady);
+  container.add(Box.createVerticalStrut(5));
+
+  // Add Spectator checkbox
+  chkSpectator = createSpectatorCheckbox();
+  container.add(chkSpectator);
+  container.add(Box.createVerticalStrut(5));
+
+  // Add Away checkbox
+  chkAway = createAwayCheckbox();
+  container.add(chkAway);
+  
+  return container;
+  }
+
+  /**
+   * Helper method: Creates the Ready checkbox.
+   * When checked, marks the player as ready to start the game.
+   * @return A styled JCheckBox for Ready status
+   */
+  private JCheckBox createReadyCheckbox() {
   JCheckBox chkReady = new JCheckBox("Ready");
   chkReady.setOpaque(false);
   chkReady.setForeground(new Color(30, 60, 120));
@@ -220,26 +286,35 @@ import javax.swing.border.TitledBorder;
           readyClicked();
       }
   });
-  statusContainer.add(chkReady);
-  statusContainer.add(Box.createVerticalStrut(5));
+  return chkReady;
+  }
 
-  chkSpectator = new JCheckBox("Spectator");
-  chkSpectator.setOpaque(false);
-  chkSpectator.setForeground(new Color(30, 60, 120));
-  chkSpectator.addActionListener(e -> toggleSpectator());
-  TextFX.setSubtitleFont(chkSpectator);
-  statusContainer.add(chkSpectator);
-  statusContainer.add(Box.createVerticalStrut(5));
+  /**
+   * Helper method: Creates the Spectator checkbox.
+   * When checked, marks the player as a spectator (can watch but not play).
+   * @return A styled JCheckBox for Spectator status
+   */
+  private JCheckBox createSpectatorCheckbox() {
+  JCheckBox box = new JCheckBox("Spectator");
+  box.setOpaque(false);
+  box.setForeground(new Color(30, 60, 120));
+  box.addActionListener(e -> toggleSpectator());
+  TextFX.setSubtitleFont(box);
+  return box;
+  }
 
-  chkAway = new JCheckBox("Away");
-  chkAway.setOpaque(false);
-  chkAway.setForeground(new Color(30, 60, 120));
-  chkAway.addActionListener(e -> toggleAway());
-  TextFX.setSubtitleFont(chkAway);
-  statusContainer.add(chkAway);
-  
-  panel.add(statusContainer, BorderLayout.CENTER);
-  return panel;
+  /**
+   * Helper method: Creates the Away checkbox.
+   * When checked, marks the player as away (skipped in rounds but still in game).
+   * @return A styled JCheckBox for Away status
+   */
+  private JCheckBox createAwayCheckbox() {
+  JCheckBox box = new JCheckBox("Away");
+  box.setOpaque(false);
+  box.setForeground(new Color(30, 60, 120));
+  box.addActionListener(e -> toggleAway());
+  TextFX.setSubtitleFont(box);
+  return box;
   }
 
   private JCheckBox makeCategory(String text) {
@@ -253,9 +328,14 @@ import javax.swing.border.TitledBorder;
   }
 
   // ===========================================================
-  // USER PANEL
+  // USER PANEL (PLAYERS LIST)
   // ===========================================================
+  /**
+   * Creates the players list panel that shows all connected players with their points and status.
+   * @return A JPanel containing the user list
+   */
   private JPanel buildUserPanel() {
+  // Create the main panel
   JPanel panel = new JPanel();
   panel.setLayout(new BorderLayout());
   panel.setBackground(Color.WHITE);
@@ -263,22 +343,44 @@ import javax.swing.border.TitledBorder;
   ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
   ((TitledBorder) panel.getBorder()).setTitleColor(new Color(30, 60, 120));
 
+  // Create and setup the user list
+  createUserList();
+  setupUserListRenderer();
+
+  // Add the list to a scroll pane and add to panel
+  panel.add(new JScrollPane(lstUsers), BorderLayout.CENTER);
+  panel.setPreferredSize(new Dimension(290, 260));
+  return panel;
+  }
+
+  /**
+   * Helper method: Creates the user list component.
+   * This list will display all players with their IDs, names, points, and status.
+   */
+  private void createUserList() {
   userModel = new DefaultListModel<>();
   lstUsers = new JList<>(userModel);
-  // White background matching mockup
   lstUsers.setBackground(Color.WHITE);
   lstUsers.setForeground(new Color(30, 60, 120));
   lstUsers.setBorder(new EmptyBorder(5, 5, 5, 5));
+  }
 
+  /**
+   * Helper method: Sets up how each user is displayed in the list.
+   * This custom renderer formats each user with their name, ID, points, and status indicators.
+   */
+  private void setupUserListRenderer() {
   lstUsers.setCellRenderer(new DefaultListCellRenderer() {
       @Override
       public Component getListCellRendererComponent(
               JList<?> list, Object value, int index,
               boolean isSelected, boolean cellHasFocus) {
 
+          // Get the default label from parent class
           JLabel lbl = (JLabel) super.getListCellRendererComponent(
                   list, value, index, isSelected, cellHasFocus);
 
+          // If the value is a User object, format it for display
           if (value instanceof User u) {
               lbl.setText(u.toDisplayString());
               lbl.setBackground(Color.WHITE);
@@ -287,10 +389,6 @@ import javax.swing.border.TitledBorder;
           return lbl;
       }
   });
-
-  panel.add(new JScrollPane(lstUsers), BorderLayout.CENTER);
-  panel.setPreferredSize(new Dimension(290, 260));
-  return panel;
   }
 
   // ===========================================================
@@ -308,6 +406,10 @@ import javax.swing.border.TitledBorder;
   return col;
   }
 
+  /**
+   * Creates the chat panel where players can send messages to each other.
+   * @return A JPanel containing chat display and input
+   */
   private JPanel buildChatPanel() {
   JPanel panel = new JPanel();
   panel.setLayout(new BorderLayout());
@@ -316,38 +418,60 @@ import javax.swing.border.TitledBorder;
   ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
   ((TitledBorder) panel.getBorder()).setTitleColor(new Color(30, 60, 120));
 
+  // Create chat display area
+  createChatDisplay();
+  panel.add(new JScrollPane(txtChat), BorderLayout.CENTER);
+
+  // Create chat input area
+  JPanel inputPanel = createChatInputPanel();
+  panel.add(inputPanel, BorderLayout.SOUTH);
+  
+  return panel;
+  }
+
+  /**
+   * Helper method: Creates the chat text area for displaying messages.
+   */
+  private void createChatDisplay() {
   txtChat = new JTextArea();
   txtChat.setEditable(false);
   txtChat.setLineWrap(true);
   txtChat.setWrapStyleWord(true);
-  // White background matching mockup
   txtChat.setBackground(Color.WHITE);
   txtChat.setForeground(new Color(30, 30, 30));
   txtChat.setBorder(new EmptyBorder(5, 5, 5, 5));
+  }
 
-  panel.add(new JScrollPane(txtChat), BorderLayout.CENTER);
-
+  /**
+   * Helper method: Creates the chat input panel with text field and send button.
+   * @return A JPanel containing the input field and send button
+   */
+  private JPanel createChatInputPanel() {
   JPanel input = new JPanel(new BorderLayout(5, 5));
   input.setOpaque(false);
 
+  // Create chat input field
   txtChatInput = new JTextField("Type message...");
   txtChatInput.setBackground(Color.WHITE);
   txtChatInput.setForeground(new Color(100, 100, 100));
   txtChatInput.setBorder(new LineBorder(new Color(200, 200, 200), 1));
-  // Allow Enter key to send chat
-  txtChatInput.addActionListener(e -> sendChat());
+  txtChatInput.addActionListener(e -> sendChat()); // Enter key sends message
   
+  // Create send button
   btnSendChat = new JButton("SEND");
   styleSecondary(btnSendChat);
   btnSendChat.addActionListener(e -> sendChat());
 
   input.add(txtChatInput, BorderLayout.CENTER);
   input.add(btnSendChat, BorderLayout.EAST);
-
-  panel.add(input, BorderLayout.SOUTH);
-  return panel;
+  
+  return input;
   }
 
+  /**
+   * Creates the game events panel that shows game-related messages and updates.
+   * @return A JPanel containing the events display area
+   */
   private JPanel buildEventsPanel() {
   JPanel panel = new JPanel();
   panel.setLayout(new BorderLayout());
@@ -356,24 +480,37 @@ import javax.swing.border.TitledBorder;
   ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
   ((TitledBorder) panel.getBorder()).setTitleColor(new Color(30, 60, 120));
 
+  // Create events display area
+  createEventsDisplay();
+  panel.add(new JScrollPane(txtEvents), BorderLayout.CENTER);
+  panel.setPreferredSize(new Dimension(260, 220));
+  
+  return panel;
+  }
+
+  /**
+   * Helper method: Creates the game events text area for displaying game messages.
+   */
+  private void createEventsDisplay() {
   txtEvents = new JTextArea();
   txtEvents.setEditable(false);
   txtEvents.setLineWrap(true);
   txtEvents.setWrapStyleWord(true);
-  // White background matching mockup
   txtEvents.setBackground(Color.WHITE);
   txtEvents.setForeground(new Color(30, 30, 30));
   txtEvents.setBorder(new EmptyBorder(5, 5, 5, 5));
-
-  panel.add(new JScrollPane(txtEvents), BorderLayout.CENTER);
-  panel.setPreferredSize(new Dimension(260, 220));
-  return panel;
   }
 
   // ===========================================================
   // GAME PANEL
   // ===========================================================
+  /**
+   * Creates the main game panel that displays questions, answers, category, and timer.
+   * This is the central area where players see and answer trivia questions.
+   * @return A JPanel containing all game display elements
+   */
   private JPanel buildGamePanel() {
+  // Create the main panel
   JPanel panel = new JPanel();
   panel.setLayout(new BorderLayout(10, 10));
   panel.setBackground(Color.WHITE);
@@ -381,75 +518,130 @@ import javax.swing.border.TitledBorder;
   ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
   ((TitledBorder) panel.getBorder()).setTitleColor(new Color(30, 60, 120));
 
+  // Add category and timer at the top
+  JPanel topPanel = createCategoryTimerPanel();
+  panel.add(topPanel, BorderLayout.NORTH);
+
+  // Add question display in the center
+  JScrollPane questionDisplay = createQuestionDisplay();
+  panel.add(questionDisplay, BorderLayout.CENTER);
+
+  // Add answer buttons and submit button at the bottom
+  JPanel bottomContainer = createAnswerButtonsContainer();
+  panel.add(bottomContainer, BorderLayout.SOUTH);
+  
+  return panel;
+  }
+
+  /**
+   * Helper method: Creates the top panel showing category and timer.
+   * @return A JPanel with category label on left and timer on right
+   */
+  private JPanel createCategoryTimerPanel() {
   JPanel top = new JPanel(new BorderLayout());
   top.setOpaque(false);
 
+  // Create category label
   lblCategory = new JLabel("Category: -");
-  lblCategory.setForeground(new Color(30, 100, 200)); // Light blue matching mockup
-  lblTimer = new JLabel("Timer: -", SwingConstants.RIGHT);
-  lblTimer.setForeground(new Color(30, 100, 200)); // Light blue matching mockup
+  lblCategory.setForeground(new Color(30, 100, 200));
   TextFX.setSubtitleFont(lblCategory);
+
+  // Create timer label
+  lblTimer = new JLabel("Timer: -", SwingConstants.RIGHT);
+  lblTimer.setForeground(new Color(30, 100, 200));
   TextFX.setSubtitleFont(lblTimer);
 
+  // Add to panel
   top.add(lblCategory, BorderLayout.WEST);
   top.add(lblTimer, BorderLayout.EAST);
-  panel.add(top, BorderLayout.NORTH);
+  return top;
+  }
 
-  // Large, prominent question area matching mockup
+  /**
+   * Helper method: Creates the question display area.
+   * This is a scrollable text area that shows the current trivia question.
+   * @return A JScrollPane containing the question text area
+   */
+  private JScrollPane createQuestionDisplay() {
+  // Create text area for question
   txtQuestion = new JTextArea("Question appears here.");
   txtQuestion.setEditable(false);
   txtQuestion.setLineWrap(true);
   txtQuestion.setWrapStyleWord(true);
-  txtQuestion.setOpaque(true); // Make opaque so it's visible
-  txtQuestion.setBackground(Color.WHITE); // White background for visibility
-  txtQuestion.setForeground(new Color(30, 60, 120)); // Dark blue matching mockup
-  // Larger, bolder font for prominence
+  txtQuestion.setOpaque(true);
+  txtQuestion.setBackground(Color.WHITE);
+  txtQuestion.setForeground(new Color(30, 60, 120));
   txtQuestion.setFont(TextFX.getSubtitleFont().deriveFont(Font.BOLD, 18f));
   txtQuestion.setBorder(new EmptyBorder(40, 30, 40, 30));
   
-  JScrollPane questionScroll = new JScrollPane(txtQuestion);
-  questionScroll.setOpaque(false);
-  questionScroll.getViewport().setOpaque(false);
-  questionScroll.setBorder(null);
-  questionScroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+  // Wrap in scroll pane for long questions
+  JScrollPane scroll = new JScrollPane(txtQuestion);
+  scroll.setOpaque(false);
+  scroll.getViewport().setOpaque(false);
+  scroll.setBorder(null);
+  scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
   
-  panel.add(questionScroll, BorderLayout.CENTER);
+  return scroll;
+  }
 
-  // Answer buttons layout matching mockup
+  /**
+   * Helper method: Creates the container with answer buttons and submit button.
+   * @return A JPanel containing 4 answer buttons and a submit button
+   */
+  private JPanel createAnswerButtonsContainer() {
+  // Create panel for answer buttons (2x2 grid)
+  JPanel answers = createAnswerButtons();
+  
+  // Create submit button
+  JButton btnSubmit = createSubmitButton();
+  JPanel submitPanel = new JPanel();
+  submitPanel.setOpaque(false);
+  submitPanel.setBorder(new EmptyBorder(10, 0, 10, 0));
+  submitPanel.add(btnSubmit);
+  
+  // Combine answers and submit in a vertical container
+  JPanel container = new JPanel();
+  container.setLayout(new BoxLayout(container, BoxLayout.Y_AXIS));
+  container.setOpaque(false);
+  container.add(answers);
+  container.add(submitPanel);
+  
+  return container;
+  }
+
+  /**
+   * Helper method: Creates the 4 answer buttons in a 2x2 grid.
+   * @return A JPanel with 4 answer buttons
+   */
+  private JPanel createAnswerButtons() {
   JPanel answers = new JPanel(new GridLayout(2, 2, 10, 10));
   answers.setOpaque(false);
   answers.setBorder(new EmptyBorder(20, 40, 10, 40));
 
+  // Create 4 answer buttons
   for (int i = 0; i < 4; i++) {
-      int idx = i;
+      int idx = i; // Store index for lambda
       JButton btn = new JButton("Answer " + (i + 1));
       styleAnswer(btn);
       btn.addActionListener(e -> answerClicked(idx));
       answerButtons[i] = btn;
       answers.add(btn);
   }
-  
-  // Submit button matching mockup
-  JButton btnSubmit = new JButton("SUBMIT");
-  stylePrimary(btnSubmit);
-  btnSubmit.addActionListener(e -> {
+  return answers;
+  }
+
+  /**
+   * Helper method: Creates the submit button.
+   * Note: Answer submission is actually handled when clicking answer buttons.
+   * @return A styled JButton for submitting answers
+   */
+  private JButton createSubmitButton() {
+  JButton btn = new JButton("SUBMIT");
+  stylePrimary(btn);
+  btn.addActionListener(e -> {
       // Submit is handled by answer selection, but keep for UI consistency
   });
-  JPanel submitPanel = new JPanel();
-  submitPanel.setOpaque(false);
-  submitPanel.setBorder(new EmptyBorder(10, 0, 10, 0));
-  submitPanel.add(btnSubmit);
-  
-  // Container for answers and submit button - goes in SOUTH
-  JPanel bottomContainer = new JPanel();
-  bottomContainer.setLayout(new BoxLayout(bottomContainer, BoxLayout.Y_AXIS));
-  bottomContainer.setOpaque(false);
-  bottomContainer.add(answers);
-  bottomContainer.add(submitPanel);
-  
-  panel.add(bottomContainer, BorderLayout.SOUTH);
-  
-  return panel;
+  return btn;
   }
 
   // ===========================================================
@@ -720,6 +912,11 @@ import javax.swing.border.TitledBorder;
   // ===========================================================
   // HELPERS
   // ===========================================================
+  /**
+   * Helper method: Creates a styled label with dark blue text.
+   * @param text The text to display on the label
+   * @return A styled JLabel
+   */
   private JLabel label(String text) {
   JLabel lbl = new JLabel(text);
   lbl.setForeground(new Color(30, 60, 120));
