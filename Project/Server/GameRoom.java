@@ -165,19 +165,25 @@ protected synchronized void handleDisconnect(ServerThread client) {
 // Message / command handling
 // =====================================================================
 
+/**
+ * Handles incoming messages from clients. If message starts with "/", it's a command.
+ * Otherwise, it's treated as chat and forwarded to Room base class.
+ */
 @Override
 protected synchronized void handleMessage(ServerThread sender, String msg) {
     if (msg == null) return;
     String text = msg.trim();
     if (text.isEmpty()) return;
 
-    // Commands always start with "/"
+    // Commands always start with "/" - parse command name and arguments
     if (text.startsWith(Constants.COMMAND_TRIGGER)) {
+        // Remove "/" and split into command name and arguments
         String noSlash = text.substring(1);
         String[] parts = noSlash.split(Constants.SINGLE_SPACE, 2);
         String command = parts[0].toLowerCase();
         String args = (parts.length > 1) ? parts[1].trim() : "";
 
+        // Route to appropriate command handler
         switch (command) {
             case "ready"      -> handleReady(sender);
             case "away"       -> handleAway(sender, true);
@@ -368,6 +374,11 @@ private void handleSpectate(ServerThread sender) {
 // Question loading & selection
 // =====================================================================
 
+/**
+ * Loads questions from a text file. Format: category|question|a1|a2|a3|a4|correctIndex
+ * Tries Server/questions.txt first, then questions.txt in project root.
+ * If file not found, uses built-in sample questions.
+ */
 private void loadQuestionsFromFile() {
     questionPool.clear();
 
@@ -383,18 +394,22 @@ private void loadQuestionsFromFile() {
         return;
     }
 
+    // Read file line by line, parse each question
     try (BufferedReader br = new BufferedReader(new FileReader(f))) {
         String line;
         while ((line = br.readLine()) != null) {
             line = line.trim();
+            // Skip empty lines and comments (lines starting with #)
             if (line.isEmpty() || line.startsWith("#")) continue;
 
+            // Parse the line into a Question object
             Question q = parseQuestionLine(line);
             if (q != null) {
                 questionPool.add(q);
             }
         }
     } catch (IOException e) {
+        // If file read fails, use built-in questions
         addBuiltInSampleQuestions();
     }
 }
@@ -589,22 +604,32 @@ private void showCorrectAnswer() {
     broadcast(null, "Correct answer: " + letter + " – " + answerText);
 }
 
+/**
+ * Awards points to players who answered correctly, in order of speed.
+ * Points diminish: 1st = 10, 2nd = 7, 3rd = 5, 4th = 3, rest = 1.
+ * correctOrder list contains IDs in the order they answered correctly.
+ */
 private void awardPoints() {
-    // First correct: 10, second: 7, third: 5, rest: 3 (then 1)
+    // Point values for first 4 correct answers, then 1 point for each after
     int[] awards = new int[]{10, 7, 5, 3};
 
+    // Award points to each player in the order they answered correctly
     for (int i = 0; i < correctOrder.size(); i++) {
         long id = correctOrder.get(i);
+        // Use award array for first 4, then 1 point for everyone else
         int award = (i < awards.length) ? awards[i] : 1;
 
+        // Update total points for this player
         int newTotal = points.getOrDefault(id, 0) + award;
         points.put(id, newTotal);
 
         ServerThread st = clients.get(id);
         String name = (st != null) ? st.getDisplayName() : ("Player#" + id);
 
+        // Broadcast points earned to all players
         broadcast(null, name + " earned " + award + " points (total " + newTotal + ").");
 
+        // Send points update payload to all clients for UI sync
         PointsPayload pp = new PointsPayload();
         pp.setPayloadType(PayloadType.POINTS_UPDATE);
         pp.setClientId(Constants.DEFAULT_CLIENT_ID);
@@ -693,20 +718,29 @@ private void sendQuestionToSingleClient(ServerThread client) {
 // Timer
 // =====================================================================
 
+/**
+ * Starts a countdown timer for the current round.
+ * Timer runs in a separate thread, sends updates every second.
+ * When timer reaches 0, the round ends automatically.
+ */
 private void startTimer() {
-    stopTimer(); // just in case
+    stopTimer(); // Stop any existing timer first
 
     timerSecondsLeft = ROUND_SECONDS;
 
+    // Create a daemon thread that counts down every second
     timerThread = new Thread(() -> {
         while (timerSecondsLeft >= 0 && sessionActive && currentQuestion != null) {
+            // Send current time remaining to all clients
             sendTimerUpdate(timerSecondsLeft);
 
+            // When time runs out, end the round
             if (timerSecondsLeft == 0) {
                 endRound("Time's up!");
                 break;
             }
 
+            // Wait 1 second before next countdown
             try {
                 Thread.sleep(1000);
             } catch (InterruptedException e) {
@@ -715,7 +749,7 @@ private void startTimer() {
             timerSecondsLeft--;
         }
     });
-    timerThread.setDaemon(true);
+    timerThread.setDaemon(true); // Daemon thread dies when main program ends
     timerThread.start();
 }
 

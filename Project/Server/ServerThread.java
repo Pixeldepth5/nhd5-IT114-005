@@ -22,6 +22,10 @@ public class ServerThread extends BaseServerThread {
         this.onInitializationComplete = onInit;
     }
 
+    /**
+     * Routes incoming payloads to appropriate Room handler methods.
+     * Extracts data from payload and passes raw data (not payload) to Room.
+     */
     @Override
     protected void processPayload(Payload incoming) {
         switch (incoming.getPayloadType()) {

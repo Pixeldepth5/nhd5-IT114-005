@@ -29,9 +29,9 @@ public class Server {
     private final ConcurrentHashMap<String, Room> rooms = new ConcurrentHashMap<>();
 
     public Server() {
-        instance = this;
+        instance = this; // Set singleton instance
 
-        // Ensure Lobby exists on startup
+        // Ensure Lobby exists on startup (required by rubric)
         try {
             createRoom(Room.LOBBY);
         } catch (DuplicateRoomException e) {
@@ -84,16 +84,20 @@ public class Server {
     /**
      * Start a TCP server on port 3000 and constantly accept new clients.
      */
+    /**
+     * Starts the server and listens for incoming client connections.
+     * Each new connection gets its own ServerThread to handle communication.
+     */
     public void start() {
         System.out.println("Server starting on port " + port + "...");
 
         try (ServerSocket serverSocket = new ServerSocket(port)) {
+            // Continuously accept new client connections
             while (isRunning) {
-
                 Socket clientSocket = serverSocket.accept();
                 System.out.println("Client connected: " + clientSocket.getInetAddress());
 
-                // When ServerThread finishes setup, calls onClientInitialized(...)
+                // Create a thread for this client - callback runs when client is initialized
                 ServerThread clientThread = new ServerThread(clientSocket, this::onClientInitialized);
                 clientThread.start();
             }

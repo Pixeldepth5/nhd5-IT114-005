@@ -17,11 +17,13 @@ import javax.swing.border.TitledBorder;
 /**
 
 * UCID: nhd5
-* Final clean TriviaGuessGame Client
-* * Fully compatible with your final payload definitions
-* * No missing methods (getQuestionText(), getAnswers(), etc.)
-* * No invalid payload types (COMMAND removed)
-* * Splits CHAT vs GAME EVENTS using "[CHAT]" prefix convention
+* Date: December 8, 2025
+* Description: TriviaGuessGame Client – GUI client application for trivia game.
+*              Handles connection to server, UI rendering, user input, and game state.
+*              Fully compatible with payload definitions. Splits CHAT vs GAME EVENTS using "[CHAT]" prefix.
+* References:
+*   - W3Schools: https://www.w3schools.com/java/java_networking.asp
+*   - W3Schools: https://www.w3schools.com/java/java_methods.asp (for event handling)
     */
     public class Client {
 
