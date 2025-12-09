@@ -1,79 +1,84 @@
-// UCID: nhd5
-// Date: December 8, 2025
-// Description: TextFX – helper for custom fonts (Behind The Nineties + Visby CF)
-// References:
-//  - https://www.w3schools.com/java/java_methods.asp
-//  - https://www.w3schools.com/java/java_files_read.asp (reading from file)
-
 package Client;
 
-import java.awt.Component;
-import java.awt.Font;
+import java.awt.*;
 import java.io.File;
-import java.io.FileInputStream;
 
-public class TextFX {
+/**
 
-    // NOTE: these are the exact font file locations on your Mac
-    private static final String NINETIES_PATH =
-            "/Users/nilka/Library/Fonts/Behind The Nineties Bold.ttf";
-    private static final String VISBY_PATH =
-            "/Users/nilka/Library/Fonts/VisbyCF-Regular.otf";
+* Safely loads fonts (Behind The Nineties + Visby CF).
+* Falls back to standard fonts if unavailable.
+  */
+  public class TextFX {
 
-    private static Font titleFont;
-    private static Font subtitleFont;
+  private static Font titleFont = null;
+  private static Font subtitleFont = null;
 
-    static {
-        loadFonts();
-    }
+  static {
+  titleFont = tryLoadFont("Behind the Nineties", 36);
+  subtitleFont = tryLoadFont("Visby CF", 16);
 
-    // Load fonts from files, fall back to default if anything fails
-    private static void loadFonts() {
-        try {
-            // Behind The Nineties for title
-            File nFile = new File(NINETIES_PATH);
-            if (nFile.exists()) {
-                Font f = Font.createFont(Font.TRUETYPE_FONT, new FileInputStream(nFile));
-                titleFont = f.deriveFont(28f);
-            }
-        } catch (Exception ignored) { }
+  if (titleFont == null)
+       titleFont = new Font("Serif", Font.BOLD, 36);
 
-        try {
-            // Visby CF for subtitles / body
-            File vFile = new File(VISBY_PATH);
-            if (vFile.exists()) {
-                Font f = Font.createFont(Font.TRUETYPE_FONT, new FileInputStream(vFile));
-                subtitleFont = f.deriveFont(14f);
-            }
-        } catch (Exception ignored) { }
+  if (subtitleFont == null)
+      subtitleFont = new Font("SansSerif", Font.PLAIN, 16);
+  }
 
-        // Fallbacks if fonts didn’t load
-        if (titleFont == null) {
-            titleFont = new Font("SansSerif", Font.BOLD, 28);
-        }
-        if (subtitleFont == null) {
-            subtitleFont = new Font("SansSerif", Font.PLAIN, 14);
-        }
-    }
+  public static void setTitleFont(Component c) {
+  c.setFont(titleFont);
+  }
 
-    // ===== Public helpers =====
+  public static Font getSubtitleFont() {
+  return subtitleFont;
+  }
 
-    // Apply Behind The Nineties title font
-    public static void setTitleFont(Component comp) {
-        if (comp != null) {
-            comp.setFont(titleFont);
-        }
-    }
+  public static void setSubtitleFont(Component c) {
+  c.setFont(subtitleFont);
+  }
 
-    // Apply Visby CF to any component (subtitle / body)
-    public static void setSubtitleFont(Component comp) {
-        if (comp != null) {
-            comp.setFont(subtitleFont);
-        }
-    }
+  // Attempts to load font by name from system or ./fonts/
+  private static Font tryLoadFont(String name, int size) {
+  try {
+  GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
 
-    // Used by TitledBorder so all panels share the same subtitle font
-    public static Font getSubtitleFont() {
-        return subtitleFont;
-    }
-}
+  // 1. Try to find in installed system fonts
+       for (Font f : ge.getAllFonts()) {
+           if (f.getName().equalsIgnoreCase(name) ||
+               f.getFontName().equalsIgnoreCase(name)) {
+               return f.deriveFont(Font.PLAIN, size);
+           }
+       }
+
+       // 2. Try loading from fonts folder (project root)
+       File dir = new File("fonts");
+       if (!dir.exists()) {
+           // Try relative to project root
+           dir = new File("./fonts");
+       }
+       if (dir.exists() && dir.isDirectory()) {
+           File[] files = dir.listFiles((d, fileName) -> {
+               String lower = fileName.toLowerCase();
+               return lower.endsWith(".ttf") || lower.endsWith(".otf");
+           });
+           if (files != null) {
+               for (File f : files) {
+                   String fileName = f.getName().toLowerCase();
+                   if (name.toLowerCase().contains("nineties") && 
+                       (fileName.contains("nineties") || fileName.contains("behind"))) {
+                       Font loaded = Font.createFont(Font.TRUETYPE_FONT, f);
+                       ge.registerFont(loaded);
+                       return loaded.deriveFont(Font.PLAIN, size);
+                   }
+                   if (name.toLowerCase().contains("visby") && 
+                       fileName.contains("visby")) {
+                       Font loaded = Font.createFont(Font.TRUETYPE_FONT, f);
+                       ge.registerFont(loaded);
+                       return loaded.deriveFont(Font.PLAIN, size);
+                   }
+               }
+           }
+       }
+  } catch (Exception ignored) {}
+  return null;
+  }
+  }

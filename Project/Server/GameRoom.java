@@ -65,7 +65,6 @@ import java.util.*;
 
 public class GameRoom extends Room {
 
-```
 // -------- Question POJO --------
 private static class Question {
     String category;
@@ -225,20 +224,24 @@ private void handleReady(ServerThread sender) {
     }
 }
 
-/** true if all non-away, non-spectator players are ready and at least one exists */
+/** true if all non-away, non-spectator players are ready and at least 2 exist */
 private boolean allActivePlayersReady() {
-    boolean anyActive = false;
+    int activeCount = 0;
+    int readyCount = 0;
+    
     for (ServerThread st : getClients()) {
         long id = st.getClientId();
         if (spectator.getOrDefault(id, false)) continue;
         if (away.getOrDefault(id, false)) continue;
 
-        anyActive = true;
-        if (!ready.getOrDefault(id, false)) {
-            return false;
+        activeCount++;
+        if (ready.getOrDefault(id, false)) {
+            readyCount++;
         }
     }
-    return anyActive;
+    
+    // Need at least 2 active players and all must be ready
+    return activeCount >= 2 && activeCount == readyCount;
 }
 
 private synchronized void startSession() {
@@ -757,6 +760,4 @@ private void handleAddQuestion(ServerThread sender, String args) {
             "' by " + sender.getDisplayName() + ".");
     // (Optional) append to file – skipped to keep things simple
 }
-```
-
 }

@@ -19,7 +19,13 @@ public class QAPayload extends Payload {
     public String getQuestion() {
         return question;
     }
+    public String getQuestionText() {
+        return question;
+    }
     public void setQuestion(String question) {
+        this.question = question;
+    }
+    public void setQuestionText(String question) {
         this.question = question;
     }
 

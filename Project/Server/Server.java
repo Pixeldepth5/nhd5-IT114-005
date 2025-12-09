@@ -57,12 +57,8 @@ public class Server {
 
         Room newRoom;
 
-        // Lobby uses base Room class, game rooms use GameRoom logic
-        if (Room.LOBBY.equalsIgnoreCase(name)) {
-            newRoom = new Room(name);
-        } else {
-            newRoom = new GameRoom(name);
-        }
+        // Lobby is now a GameRoom so ready commands work
+        newRoom = new GameRoom(name);
 
         rooms.put(key, newRoom);
         System.out.println("Created Room: " + name);
