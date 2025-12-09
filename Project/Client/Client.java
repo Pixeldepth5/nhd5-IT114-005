@@ -728,15 +728,25 @@ import javax.swing.border.TitledBorder;
   }
   }
 
+  /**
+   * Handles MESSAGE payloads from the server.
+   * Separates chat messages (prefixed with [CHAT]) from game events.
+   * @param p The message payload
+   */
   private void handleMessagePayload(Payload p) {
   if (p.getMessage() == null) return;
 
   String msg = p.getMessage();
 
+  // Check if this is a chat message (prefixed with [CHAT])
   if (msg.startsWith("[CHAT] ")) {
+      // Remove [CHAT] prefix and show in chat panel
       appendChat(msg.substring(7));
   } else {
+      // This is a game event, show in events panel
       appendEvent(msg);
+      
+      // Handle special game events
       if (msg.contains("GAME OVER")) {
           txtQuestion.setText("Game over. Click READY to play again.");
           for (JButton btn : answerButtons) {
@@ -806,22 +816,31 @@ import javax.swing.border.TitledBorder;
   answerButtons[idx].setForeground(new Color(30, 60, 120));
   }
 
+  /**
+   * Sends a chat message to the server.
+   * Spectators cannot send chat messages.
+   */
   private void sendChat() {
   if (!connected) return;
+  
+  // Spectators cannot chat
   if (isSpectator) {
   appendEvent("Spectators cannot chat.");
   return;
   }
 
+  // Get message from input field
   String msg = txtChatInput.getText().trim();
   if (msg.isEmpty()) return;
 
+  // Create payload and send to server
   Payload p = new Payload();
   p.setPayloadType(PayloadType.MESSAGE);
   p.setClientId(clientId);
   p.setMessage(msg);
   send(p);
 
+  // Clear the input field
   txtChatInput.setText("");
   }
 
@@ -835,11 +854,18 @@ import javax.swing.border.TitledBorder;
   isReady = true;
   }
 
+  /**
+   * Sends a command to the server (commands start with /).
+   * Examples: /ready, /answer 0, /away, /spectate, /categories geography,science
+   * @param cmd The command string (e.g., "/ready" or "/answer 2")
+   */
   private void sendCommand(String cmd) {
   if (!connected) return;
 
+  // Commands are sent as MESSAGE payloads
+  // The server checks if the message starts with / and handles it as a command
   Payload p = new Payload();
-  p.setPayloadType(PayloadType.MESSAGE); // server interprets slash commands inside MESSAGE
+  p.setPayloadType(PayloadType.MESSAGE);
   p.setClientId(clientId);
   p.setMessage(cmd);
   send(p);
@@ -900,6 +926,10 @@ import javax.swing.border.TitledBorder;
   sendCommand("/addq " + line);
   }
 
+  /**
+   * Helper method: Sends a payload to the server.
+   * @param p The payload to send
+   */
   private void send(Payload p) {
   try {
   out.writeObject(p);
@@ -924,8 +954,12 @@ import javax.swing.border.TitledBorder;
   return lbl;
   }
 
+  /**
+   * Helper method: Styles primary buttons (like CONNECT, SUBMIT).
+   * Primary buttons are light blue with white text.
+   * @param btn The button to style
+   */
   private void stylePrimary(JButton btn) {
-  // Primary button matching mockup - light blue
   btn.setBackground(new Color(100, 150, 255));
   btn.setForeground(Color.WHITE);
   btn.setBorder(new LineBorder(new Color(80, 130, 235), 1, true));
@@ -934,8 +968,12 @@ import javax.swing.border.TitledBorder;
   btn.setPreferredSize(new Dimension(150, 40));
   }
 
+  /**
+   * Helper method: Styles secondary buttons (like SEND).
+   * Secondary buttons are smaller light blue buttons.
+   * @param btn The button to style
+   */
   private void styleSecondary(JButton btn) {
-  // Secondary button matching mockup
   btn.setBackground(new Color(100, 150, 255));
   btn.setForeground(Color.WHITE);
   btn.setBorder(new LineBorder(new Color(80, 130, 235), 1, true));
@@ -944,8 +982,12 @@ import javax.swing.border.TitledBorder;
   btn.setPreferredSize(new Dimension(80, 30));
   }
 
+  /**
+   * Helper method: Styles answer buttons.
+   * Answer buttons are white with dark blue text and borders.
+   * @param btn The button to style
+   */
   private void styleAnswer(JButton btn) {
-  // Answer buttons matching mockup - white with dark text
   btn.setBackground(Color.WHITE);
   btn.setForeground(new Color(30, 60, 120));
   btn.setBorder(new LineBorder(new Color(200, 200, 200), 1, true));
@@ -954,11 +996,21 @@ import javax.swing.border.TitledBorder;
   btn.setPreferredSize(new Dimension(250, 40));
   }
 
+  /**
+   * Helper method: Adds a message to the game events panel.
+   * Automatically scrolls to the bottom to show the latest message.
+   * @param msg The message to display
+   */
   private void appendEvent(String msg) {
   txtEvents.append(msg + "\n");
   txtEvents.setCaretPosition(txtEvents.getDocument().getLength());
   }
 
+  /**
+   * Helper method: Adds a message to the chat panel.
+   * Automatically scrolls to the bottom to show the latest message.
+   * @param msg The chat message to display
+   */
   private void appendChat(String msg) {
   txtChat.append(msg + "\n");
   txtChat.setCaretPosition(txtChat.getDocument().getLength());
