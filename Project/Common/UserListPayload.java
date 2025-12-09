@@ -2,6 +2,8 @@
 // Date: December 8, 2025
 // Description: UserListPayload – syncs user list with points, locked status, away, and spectator flags
 //              to all clients in the game room.
+// References:
+//   - W3Schools: https://www.w3schools.com/java/java_arraylist.asp
 
 package Common;
 
@@ -16,6 +18,16 @@ public class UserListPayload extends Payload {
     private ArrayList<Boolean> away = new ArrayList<>();
     private ArrayList<Boolean> spectator = new ArrayList<>();
 
+    /**
+     * Adds a user to the synchronized user list.
+     * All lists are kept in parallel (same index = same user).
+     * @param id Client ID
+     * @param name Display name
+     * @param pts Current points
+     * @param locked Whether user locked in answer this round
+     * @param isAway Whether user is marked away
+     * @param isSpectator Whether user is a spectator
+     */
     public void addUser(long id, String name, int pts, boolean locked, boolean isAway, boolean isSpectator) {
         clientIds.add(id);
         displayNames.add(name);

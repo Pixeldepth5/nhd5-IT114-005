@@ -1,12 +1,13 @@
+// UCID: nhd5
+// Date: December 8, 2025
+// Description: Shared enum for all payload types used by Client + Server.
+//              Determines what kind of data is in a Payload object.
+// References:
+//   - W3Schools: https://www.w3schools.com/java/java_enums.asp
+
 package Common;
 
-/**
-
-* UCID: nhd5
-* Date: December 8, 2025
-* Description: Shared enum for all payload types used by Client + Server.
-  */
-  public enum PayloadType {
+public enum PayloadType {
 
   // Connection & rooms
   CLIENT_CONNECT,   // used with ConnectionPayload from client
@@ -32,4 +33,4 @@ package Common;
 
   // Generic numeric payload (not currently used but safe)
   NUMBER
-  }
+}
