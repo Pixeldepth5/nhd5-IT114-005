@@ -75,7 +75,8 @@ private static class Question {
 
 // -------- Game settings --------
 private static final int MAX_ROUNDS = 5;
-private static final int ROUND_SECONDS = 20;
+// Requested 30s timer (UI unchanged)
+private static final int ROUND_SECONDS = 30;
 
 // Question bank
 private final ArrayList<Question> questionPool = new ArrayList<>();
@@ -268,6 +269,8 @@ private synchronized void startSession() {
         lockedThisRound.put(id, false);
     }
 
+    // Notify clients the game is transitioning to active state
+    sendPhaseToAll(Phase.IN_PROGRESS);
     startNextRound();
 }
 
@@ -309,6 +312,7 @@ private synchronized void startNextRound() {
         return;
     }
 
+    sendPhaseToAll(Phase.IN_PROGRESS);
     broadcast(null, "Round " + currentRound + " of " + MAX_ROUNDS);
     sendQuestionToAll();
     sendUserListToAll();
@@ -761,10 +765,11 @@ private void stopTimer() {
 }
 
 private void sendTimerUpdate(int seconds) {
-    Payload p = new Payload();
+    TimerPayload p = new TimerPayload();
     p.setPayloadType(PayloadType.TIMER);
     p.setClientId(Constants.DEFAULT_CLIENT_ID);
-    p.setMessage(Integer.toString(seconds));
+    p.setTimerType(TimerType.ROUND);
+    p.setTime(seconds);
 
     for (ServerThread st : getClients()) {
         st.sendPayload(p);
@@ -793,5 +798,19 @@ private void handleAddQuestion(ServerThread sender, String args) {
     broadcast(null, "New question added in '" + q.category +
             "' by " + sender.getDisplayName() + ".");
     // (Optional) append to file – skipped to keep things simple
+}
+
+// =====================================================================
+// Phase sync
+// =====================================================================
+private void sendPhaseToAll(Phase phase) {
+    Payload p = new Payload();
+    p.setPayloadType(PayloadType.PHASE);
+    p.setClientId(Constants.DEFAULT_CLIENT_ID);
+    p.setMessage(phase.name());
+
+    for (ServerThread st : getClients()) {
+        st.sendPayload(p);
+    }
 }
 }

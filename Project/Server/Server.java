@@ -14,6 +14,8 @@ import Exceptions.RoomNotFoundException;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class Server {
@@ -82,6 +84,13 @@ public class Server {
     }
 
     /**
+     * Returns a list of room names (lowercase keys).
+     */
+    public synchronized List<String> listRooms() {
+        return new ArrayList<>(rooms.keySet());
+    }
+
+    /**
      * Start a TCP server on port 3000 and constantly accept new clients.
      */
     /**
@@ -116,6 +125,8 @@ public class Server {
         client.setClientId(nextClientId);
 
         try {
+            // Send the assigned client id back to the client
+            client.sendClientId();
             joinRoom(Room.LOBBY, client);
         } catch (RoomNotFoundException e) {
             System.out.println("Error placing client into Lobby.");

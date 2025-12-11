@@ -10,6 +10,8 @@
 package Server;
 
 import Common.Constants;
+import Common.ConnectionPayload;
+import Common.PayloadType;
 import java.util.Collection;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -41,6 +43,16 @@ public class Room {
         client.setCurrentRoom(this);
         clients.put(client.getClientId(), client);
         broadcast(null, "user \"" + client.getDisplayName() + "\" has joined the " + name);
+
+        // Inform all clients (including the new one) about the room join
+        ConnectionPayload payload = new ConnectionPayload();
+        payload.setPayloadType(PayloadType.ROOM_JOIN);
+        payload.setClientId(client.getClientId());
+        payload.setClientName(client.getClientName());
+        payload.setMessage(name);
+        for (ServerThread c : clients.values()) {
+            c.sendPayload(payload);
+        }
     }
 
     /**

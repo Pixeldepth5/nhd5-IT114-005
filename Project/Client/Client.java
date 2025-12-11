@@ -276,14 +276,6 @@ public enum Client {
 
                 sendRoomAction(text, RoomAction.LIST);
                 wasCommand = true;
-            } else if (text.equalsIgnoreCase(Command.READY.command)) {
-                sendReady();
-                wasCommand = true;
-            } else if (text.startsWith(Command.EXAMPLE_TURN.command)) {
-                text = text.replace(Command.EXAMPLE_TURN.command, "").trim();
-
-                sendDoTurn(text);
-                wasCommand = true;
             }
         }
         return wasCommand;

@@ -35,6 +35,7 @@ public class ServerThread extends BaseServerThread {
             case ROOM_CREATE    -> currentRoom.handleCreateRoom(this, incoming.getMessage());
             case ROOM_JOIN      -> currentRoom.handleJoinRoom(this, incoming.getMessage());
             case ROOM_LEAVE     -> currentRoom.handleJoinRoom(this, Room.LOBBY);
+            case ROOM_LIST      -> sendRoomList();
             default             -> System.out.println("Unknown payload type from client: " + incoming.getPayloadType());
         }
     }
@@ -47,5 +48,12 @@ public class ServerThread extends BaseServerThread {
     /** Helper so rooms can push any payload type to this client. */
     public boolean sendPayload(Payload payload) {
         return sendToClient(payload);
+    }
+
+    private void sendRoomList() {
+        RoomResultPayload payload = new RoomResultPayload();
+        payload.setPayloadType(PayloadType.ROOM_LIST);
+        payload.setRooms(Server.getInstance().listRooms());
+        sendToClient(payload);
     }
 }
