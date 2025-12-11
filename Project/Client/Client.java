@@ -1,1070 +1,804 @@
 package Client;
 
-import Common.*;
-import java.awt.*;
-import java.awt.event.ActionEvent;
+import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import javax.swing.*;
-import javax.swing.border.EmptyBorder;
-import javax.swing.border.LineBorder;
-import javax.swing.border.TitledBorder;
+import java.util.List;
+import java.util.Scanner;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import Client.Interfaces.IClientEvents;
+import Client.Interfaces.IConnectionEvents;
+import Client.Interfaces.IMessageEvents;
+import Client.Interfaces.IPhaseEvent;
+import Client.Interfaces.IPointsEvent;
+import Client.Interfaces.IReadyEvent;
+import Client.Interfaces.IRoomEvents;
+import Client.Interfaces.ITimeEvents;
+import Client.Interfaces.ITurnEvent;
+import Client.Interfaces.IQuestionEvent;
+import Client.Interfaces.IUserListEvent;
+import Common.Command;
+import Common.ConnectionPayload;
+import Common.Constants;
+import Common.LoggerUtil;
+import Common.Payload;
+import Common.PayloadType;
+import Common.Phase;
+import Common.PointsPayload;
+import Common.ReadyPayload;
+import Common.RoomAction;
+import Common.RoomResultPayload;
+import Common.TextFX;
+import Common.User;
+import Common.TextFX.Color;
+import Common.TimerPayload;
+import Common.QAPayload;
+import Common.UserListPayload;
 
 /**
-
-* UCID: nhd5
-* Date: December 8, 2025
-* Description: TriviaGuessGame Client – GUI client application for trivia game.
-*              Handles connection to server, UI rendering, user input, and game state.
-*              Fully compatible with payload definitions. Splits CHAT vs GAME EVENTS using "[CHAT]" prefix.
-* References:
-*   - W3Schools: https://www.w3schools.com/java/java_networking.asp
-*   - W3Schools: https://www.w3schools.com/java/java_methods.asp (for event handling)
-    */
-    public class Client {
-
-  // ===================== Networking =====================
-  private Socket socket;
-  private ObjectOutputStream out;
-  private ObjectInputStream in;
-  private boolean connected = false;
-  private long clientId = -1;
-
-  private boolean lockedThisRound = false;
-  private int selectedAnswerIndex = -1;  // Selected answer before locking
-  private boolean isAway = false;
-  private boolean isSpectator = false;
-  private boolean isReady = false;
-
-  // ===================== UI =====================
-  private JFrame frame;
-
-  // Connection
-  private JTextField txtUser;
-  private JTextField txtHost;
-  private JTextField txtPort;
-  private JButton btnSetName;
-  private JButton btnConnect;
-  private JLabel lblConnectHint;
-  private String currentName = "Player";
-
-  // Ready & Options
-  private JCheckBox chkAway;
-  private JCheckBox chkSpectator;
-
-  // Categories
-  private JCheckBox chkGeo;
-  private JCheckBox chkSci;
-  private JCheckBox chkMath;
-  private JCheckBox chkHist;
-
-  // Users
-  private DefaultListModel<User> userModel;
-  private JList<User> lstUsers;
-  private Map<Long, User> users = new HashMap<>();
-
-  // Chat + events
-  private JTextArea txtChat;
-  private JTextField txtChatInput;
-  private JButton btnSendChat;
-  private JTextArea txtEvents;
-
-  // Game area
-  private JLabel lblCategory;
-  private JTextArea txtQuestion;  // Changed from JLabel to JTextArea for full question display
-  private JLabel lblTimer;
-  private JButton[] answerButtons = new JButton[4];
-  private JButton btnLockAnswer;
-
-  public static void main(String[] args) {
-  SwingUtilities.invokeLater(Client::new);
-  }
-
-  public Client() {
-  buildUI();
-  }
-
-  // ===========================================================
-  // UI LAYOUT
-  // ===========================================================
-  private void buildUI() {
-  frame = new JFrame("TriviaGuessGame – nhd5");
-  frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-  frame.setSize(1200, 800);
-  frame.setLocationRelativeTo(null);
-  frame.setLayout(new BorderLayout());
-  // Light grey background matching mockup
-  frame.getContentPane().setBackground(new Color(240, 240, 240));
-
-  JPanel root = new JPanel(new BorderLayout());
-  root.setBorder(new EmptyBorder(10, 10, 10, 10));
-  root.setOpaque(false);
-
-  JLabel lblTitle = new JLabel("Trivia Guess Game", SwingConstants.CENTER);
-  TextFX.setTitleFont(lblTitle);
-  // Dark blue title matching mockup
-  lblTitle.setForeground(new Color(30, 60, 120));
-  lblTitle.setBorder(new EmptyBorder(20, 5, 20, 5));
-  root.add(lblTitle, BorderLayout.NORTH);
-
-  JPanel center = new JPanel(new BorderLayout(10, 0));
-  center.setOpaque(false);
-  center.add(buildLeftColumn(), BorderLayout.WEST);
-  center.add(buildGamePanel(), BorderLayout.CENTER);
-  center.add(buildRightColumn(), BorderLayout.EAST);
-
-  root.add(center, BorderLayout.CENTER);
-  frame.add(root);
-  frame.setVisible(true);
-  }
-
-  private JPanel buildLeftColumn() {
-  JPanel col = new JPanel();
-  col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
-  col.setOpaque(false);
-
-  col.add(buildConnectionPanel());
-  col.add(Box.createVerticalStrut(8));
-  col.add(buildOptionsPanel());
-  col.add(Box.createVerticalStrut(8));
-  col.add(buildUserPanel());
-
-  return col;
-  }
-
-  // ===========================================================
-  // CONNECTION PANEL
-  // ===========================================================
-  /**
-   * Creates the connection panel with username, host, port fields and connect button.
-   * This panel allows users to enter their connection details and connect to the server.
-   */
-  private JPanel buildConnectionPanel() {
-  // Create the main panel with white background
-  JPanel panel = new JPanel();
-  panel.setLayout(new GridBagLayout());
-  panel.setBackground(Color.WHITE);
-  panel.setBorder(new TitledBorder(new LineBorder(new Color(200, 200, 200), 1), "Username"));
-  ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
-  ((TitledBorder) panel.getBorder()).setTitleColor(new Color(30, 60, 120));
-
-  // GridBagConstraints helps position components in a grid layout
-  GridBagConstraints c = new GridBagConstraints();
-  c.insets = new Insets(2, 4, 2, 4);
-  c.gridy = 0; // Start at row 0
-
-  // Add username field (row 0)
-  c.gridx = 0; panel.add(label("Username:"), c);
-  c.gridx = 1; c.gridwidth = 2; c.fill = GridBagConstraints.HORIZONTAL;
-  txtUser = createTextField("Player", 15);
-  panel.add(txtUser, c);
-  
-  // Add host field (row 1)
-  c.gridx = 0; c.gridy = 1; c.gridwidth = 1;
-  panel.add(label("Host:"), c);
-  c.gridx = 1; c.gridwidth = 2; c.fill = GridBagConstraints.HORIZONTAL;
-  txtHost = createTextField("localhost", 15);
-  panel.add(txtHost, c);
-
-  // Add port field (row 2)
-  c.gridx = 0; c.gridy = 2; c.gridwidth = 1; c.fill = GridBagConstraints.NONE;
-  panel.add(label("Port:"), c);
-  c.gridx = 1; c.gridwidth = 2; c.fill = GridBagConstraints.HORIZONTAL;
-  txtPort = createTextField("3000", 15);
-  panel.add(txtPort, c);
-
-  // Add connect button (row 3)
-  c.gridx = 0; c.gridy = 3; c.gridwidth = 3; c.fill = GridBagConstraints.NONE;
-  btnConnect = createConnectButton();
-  panel.add(btnConnect, c);
-
-  // Add hint label (row 4)
-  c.gridx = 0; c.gridy = 4; c.gridwidth = 3;
-  lblConnectHint = createConnectionHint();
-  panel.add(lblConnectHint, c);
-
-  return panel;
-  }
-
-  /**
-   * Helper method: Creates a styled text field for user input.
-   * @param defaultText The default text to show in the field
-   * @param columns The width of the text field
-   * @return A styled JTextField
-   */
-  private JTextField createTextField(String defaultText, int columns) {
-  JTextField field = new JTextField(defaultText, columns);
-  field.setBackground(Color.WHITE);
-  field.setForeground(new Color(30, 30, 30));
-  field.setBorder(new LineBorder(new Color(200, 200, 200), 1));
-  return field;
-  }
-
-  /**
-   * Helper method: Creates the connect button with styling and click handler.
-   * @return A styled JButton for connecting to the server
-   */
-  private JButton createConnectButton() {
-  JButton btn = new JButton("Connect");
-  stylePrimary(btn);
-  btn.addActionListener(this::connectClicked);
-  return btn;
-  }
-
-  /**
-   * Helper method: Creates the hint label that shows connection instructions.
-   * @return A JLabel with connection instructions
-   */
-  private JLabel createConnectionHint() {
-  JLabel hint = new JLabel("Step 1: Enter your name above, then click the Connect button below.");
-  hint.setForeground(new Color(100, 100, 100));
-  TextFX.setSubtitleFont(hint);
-  return hint;
-  }
-
-  // ===========================================================
-  // OPTIONS PANEL (STATUS PANEL)
-  // ===========================================================
-  /**
-   * Creates the status panel with Ready, Spectator, and Away checkboxes.
-   * This panel allows users to set their game status.
-   */
-  private JPanel buildOptionsPanel() {
-  // Create the main panel
-  JPanel panel = new JPanel();
-  panel.setLayout(new BorderLayout(8, 8));
-  panel.setBackground(Color.WHITE);
-  panel.setBorder(new TitledBorder(new LineBorder(new Color(200, 200, 200), 1), "Status"));
-  ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
-  ((TitledBorder) panel.getBorder()).setTitleColor(new Color(30, 60, 120));
-
-  // Create container for all status checkboxes
-  JPanel statusContainer = createStatusCheckboxesContainer();
-  panel.add(statusContainer, BorderLayout.CENTER);
-  return panel;
-  }
-
-  /**
-   * Helper method: Creates a container with all status checkboxes (Ready, Spectator, Away).
-   * @return A JPanel containing all status checkboxes
-   */
-  private JPanel createStatusCheckboxesContainer() {
-  JPanel container = new JPanel();
-  container.setLayout(new BoxLayout(container, BoxLayout.Y_AXIS));
-  container.setOpaque(false);
-  container.setBorder(new EmptyBorder(10, 10, 10, 10));
-  
-  // Add Ready checkbox
-  JCheckBox chkReady = createReadyCheckbox();
-  container.add(chkReady);
-  container.add(Box.createVerticalStrut(5));
-
-  // Add Spectator checkbox
-  chkSpectator = createSpectatorCheckbox();
-  container.add(chkSpectator);
-  container.add(Box.createVerticalStrut(5));
-
-  // Add Away checkbox
-  chkAway = createAwayCheckbox();
-  container.add(chkAway);
-  
-  return container;
-  }
-
-  /**
-   * Helper method: Creates the Ready checkbox.
-   * When checked, marks the player as ready to start the game.
-   * @return A styled JCheckBox for Ready status
-   */
-  private JCheckBox createReadyCheckbox() {
-  JCheckBox chkReady = new JCheckBox("Ready");
-  chkReady.setOpaque(false);
-  chkReady.setForeground(new Color(30, 60, 120));
-  TextFX.setSubtitleFont(chkReady);
-  chkReady.addActionListener(e -> {
-      if (chkReady.isSelected() && !isReady) {
-          readyClicked();
-      }
-  });
-  return chkReady;
-  }
-
-  /**
-   * Helper method: Creates the Spectator checkbox.
-   * When checked, marks the player as a spectator (can watch but not play).
-   * @return A styled JCheckBox for Spectator status
-   */
-  private JCheckBox createSpectatorCheckbox() {
-  JCheckBox box = new JCheckBox("Spectator");
-  box.setOpaque(false);
-  box.setForeground(new Color(30, 60, 120));
-  box.addActionListener(e -> toggleSpectator());
-  TextFX.setSubtitleFont(box);
-  return box;
-  }
-
-  /**
-   * Helper method: Creates the Away checkbox.
-   * When checked, marks the player as away (skipped in rounds but still in game).
-   * @return A styled JCheckBox for Away status
-   */
-  private JCheckBox createAwayCheckbox() {
-  JCheckBox box = new JCheckBox("Away");
-  box.setOpaque(false);
-  box.setForeground(new Color(30, 60, 120));
-  box.addActionListener(e -> toggleAway());
-  TextFX.setSubtitleFont(box);
-  return box;
-  }
-
-  private JCheckBox makeCategory(String text) {
-  JCheckBox box = new JCheckBox(text);
-  box.setOpaque(false);
-  box.setSelected(true);
-  box.setForeground(new Color(30, 60, 120));
-  TextFX.setSubtitleFont(box);
-  box.addActionListener(e -> sendCategories());
-  return box;
-  }
-
-  // ===========================================================
-  // USER PANEL (PLAYERS LIST)
-  // ===========================================================
-  /**
-   * Creates the players list panel that shows all connected players with their points and status.
-   * @return A JPanel containing the user list
-   */
-  private JPanel buildUserPanel() {
-  // Create the main panel
-  JPanel panel = new JPanel();
-  panel.setLayout(new BorderLayout());
-  panel.setBackground(Color.WHITE);
-  panel.setBorder(new TitledBorder(new LineBorder(new Color(200, 200, 200), 1), "Players"));
-  ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
-  ((TitledBorder) panel.getBorder()).setTitleColor(new Color(30, 60, 120));
-
-  // Create and setup the user list
-  createUserList();
-  setupUserListRenderer();
-
-  // Add the list to a scroll pane and add to panel
-  panel.add(new JScrollPane(lstUsers), BorderLayout.CENTER);
-  panel.setPreferredSize(new Dimension(290, 260));
-  return panel;
-  }
-
-  /**
-   * Helper method: Creates the user list component.
-   * This list will display all players with their IDs, names, points, and status.
-   */
-  private void createUserList() {
-  userModel = new DefaultListModel<>();
-  lstUsers = new JList<>(userModel);
-  lstUsers.setBackground(Color.WHITE);
-  lstUsers.setForeground(new Color(30, 60, 120));
-  lstUsers.setBorder(new EmptyBorder(5, 5, 5, 5));
-  }
-
-  /**
-   * Helper method: Sets up how each user is displayed in the list.
-   * This custom renderer formats each user with their name, ID, points, and status indicators.
-   */
-  private void setupUserListRenderer() {
-  lstUsers.setCellRenderer(new DefaultListCellRenderer() {
-      @Override
-      public Component getListCellRendererComponent(
-              JList<?> list, Object value, int index,
-              boolean isSelected, boolean cellHasFocus) {
-
-          // Get the default label from parent class
-          JLabel lbl = (JLabel) super.getListCellRendererComponent(
-                  list, value, index, isSelected, cellHasFocus);
-
-          // If the value is a User object, format it for display
-          if (value instanceof User u) {
-              lbl.setText(u.toDisplayString());
-              lbl.setBackground(Color.WHITE);
-              lbl.setForeground(new Color(30, 60, 120));
-          }
-          return lbl;
-      }
-  });
-  }
-
-  // ===========================================================
-  // RIGHT COLUMN (CHAT + EVENTS)
-  // ===========================================================
-  private JPanel buildRightColumn() {
-  JPanel col = new JPanel();
-  col.setLayout(new BoxLayout(col, BoxLayout.Y_AXIS));
-  col.setOpaque(false);
-  col.setPreferredSize(new Dimension(300, 0));
-
-  col.add(buildChatPanel());
-  col.add(Box.createVerticalStrut(8));
-  col.add(buildEventsPanel());
-  return col;
-  }
-
-  /**
-   * Creates the chat panel where players can send messages to each other.
-   * @return A JPanel containing chat display and input
-   */
-  private JPanel buildChatPanel() {
-  JPanel panel = new JPanel();
-  panel.setLayout(new BorderLayout());
-  panel.setBackground(Color.WHITE);
-  panel.setBorder(new TitledBorder(new LineBorder(new Color(200, 200, 200), 1), "Chat"));
-  ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
-  ((TitledBorder) panel.getBorder()).setTitleColor(new Color(30, 60, 120));
-
-  // Create chat display area
-  createChatDisplay();
-  panel.add(new JScrollPane(txtChat), BorderLayout.CENTER);
-
-  // Create chat input area
-  JPanel inputPanel = createChatInputPanel();
-  panel.add(inputPanel, BorderLayout.SOUTH);
-  
-  return panel;
-  }
-
-  /**
-   * Helper method: Creates the chat text area for displaying messages.
-   */
-  private void createChatDisplay() {
-  txtChat = new JTextArea();
-  txtChat.setEditable(false);
-  txtChat.setLineWrap(true);
-  txtChat.setWrapStyleWord(true);
-  txtChat.setBackground(Color.WHITE);
-  txtChat.setForeground(new Color(30, 30, 30));
-  txtChat.setBorder(new EmptyBorder(5, 5, 5, 5));
-  }
-
-  /**
-   * Helper method: Creates the chat input panel with text field and send button.
-   * @return A JPanel containing the input field and send button
-   */
-  private JPanel createChatInputPanel() {
-  JPanel input = new JPanel(new BorderLayout(5, 5));
-  input.setOpaque(false);
-
-  // Create chat input field
-  txtChatInput = new JTextField("Type message...");
-  txtChatInput.setBackground(Color.WHITE);
-  txtChatInput.setForeground(new Color(100, 100, 100));
-  txtChatInput.setBorder(new LineBorder(new Color(200, 200, 200), 1));
-  txtChatInput.addActionListener(e -> sendChat()); // Enter key sends message
-  
-  // Create send button
-  btnSendChat = new JButton("SEND");
-  styleSecondary(btnSendChat);
-  btnSendChat.addActionListener(e -> sendChat());
-
-  input.add(txtChatInput, BorderLayout.CENTER);
-  input.add(btnSendChat, BorderLayout.EAST);
-  
-  return input;
-  }
-
-  /**
-   * Creates the game events panel that shows game-related messages and updates.
-   * @return A JPanel containing the events display area
-   */
-  private JPanel buildEventsPanel() {
-  JPanel panel = new JPanel();
-  panel.setLayout(new BorderLayout());
-  panel.setBackground(Color.WHITE);
-  panel.setBorder(new TitledBorder(new LineBorder(new Color(200, 200, 200), 1), "Game Events"));
-  ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
-  ((TitledBorder) panel.getBorder()).setTitleColor(new Color(30, 60, 120));
-
-  // Create events display area
-  createEventsDisplay();
-  panel.add(new JScrollPane(txtEvents), BorderLayout.CENTER);
-  panel.setPreferredSize(new Dimension(260, 220));
-  
-  return panel;
-  }
-
-  /**
-   * Helper method: Creates the game events text area for displaying game messages.
-   */
-  private void createEventsDisplay() {
-  txtEvents = new JTextArea();
-  txtEvents.setEditable(false);
-  txtEvents.setLineWrap(true);
-  txtEvents.setWrapStyleWord(true);
-  txtEvents.setBackground(Color.WHITE);
-  txtEvents.setForeground(new Color(30, 30, 30));
-  txtEvents.setBorder(new EmptyBorder(5, 5, 5, 5));
-  }
-
-  // ===========================================================
-  // GAME PANEL
-  // ===========================================================
-  /**
-   * Creates the main game panel that displays questions, answers, category, and timer.
-   * This is the central area where players see and answer trivia questions.
-   * @return A JPanel containing all game display elements
-   */
-  private JPanel buildGamePanel() {
-  // Create the main panel
-  JPanel panel = new JPanel();
-  panel.setLayout(new BorderLayout(10, 10));
-  panel.setBackground(Color.WHITE);
-  panel.setBorder(new TitledBorder(new LineBorder(new Color(200, 200, 200), 1), "Question"));
-  ((TitledBorder) panel.getBorder()).setTitleFont(TextFX.getSubtitleFont());
-  ((TitledBorder) panel.getBorder()).setTitleColor(new Color(30, 60, 120));
-
-  // Add category and timer at the top
-  JPanel topPanel = createCategoryTimerPanel();
-  panel.add(topPanel, BorderLayout.NORTH);
-
-  // Add question display in the center
-  JScrollPane questionDisplay = createQuestionDisplay();
-  panel.add(questionDisplay, BorderLayout.CENTER);
-
-  // Add answer buttons and submit button at the bottom
-  JPanel bottomContainer = createAnswerButtonsContainer();
-  panel.add(bottomContainer, BorderLayout.SOUTH);
-  
-  return panel;
-  }
-
-  /**
-   * Helper method: Creates the top panel showing category and timer.
-   * @return A JPanel with category label on left and timer on right
-   */
-  private JPanel createCategoryTimerPanel() {
-  JPanel top = new JPanel(new BorderLayout());
-  top.setOpaque(false);
-
-  // Create category label
-  lblCategory = new JLabel("Category: -");
-  lblCategory.setForeground(new Color(30, 100, 200));
-  TextFX.setSubtitleFont(lblCategory);
-
-  // Create timer label
-  lblTimer = new JLabel("Timer: -", SwingConstants.RIGHT);
-  lblTimer.setForeground(new Color(30, 100, 200));
-  TextFX.setSubtitleFont(lblTimer);
-
-  // Add to panel
-  top.add(lblCategory, BorderLayout.WEST);
-  top.add(lblTimer, BorderLayout.EAST);
-  return top;
-  }
-
-  /**
-   * Helper method: Creates the question display area.
-   * This is a scrollable text area that shows the current trivia question.
-   * @return A JScrollPane containing the question text area
-   */
-  private JScrollPane createQuestionDisplay() {
-  // Create text area for question
-  txtQuestion = new JTextArea("Question appears here.");
-  txtQuestion.setEditable(false);
-  txtQuestion.setLineWrap(true);
-  txtQuestion.setWrapStyleWord(true);
-  txtQuestion.setOpaque(true);
-  txtQuestion.setBackground(Color.WHITE);
-  txtQuestion.setForeground(new Color(30, 60, 120));
-  txtQuestion.setFont(TextFX.getSubtitleFont().deriveFont(Font.BOLD, 18f));
-  txtQuestion.setBorder(new EmptyBorder(40, 30, 40, 30));
-  
-  // Wrap in scroll pane for long questions
-  JScrollPane scroll = new JScrollPane(txtQuestion);
-  scroll.setOpaque(false);
-  scroll.getViewport().setOpaque(false);
-  scroll.setBorder(null);
-  scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
-  
-  return scroll;
-  }
-
-  /**
-   * Helper method: Creates the container with answer buttons and submit button.
-   * @return A JPanel containing 4 answer buttons and a submit button
-   */
-  private JPanel createAnswerButtonsContainer() {
-  // Create panel for answer buttons (2x2 grid)
-  JPanel answers = createAnswerButtons();
-  
-  // Create lock button
-  btnLockAnswer = createSubmitButton();
-  JPanel submitPanel = new JPanel();
-  submitPanel.setOpaque(false);
-  submitPanel.setBorder(new EmptyBorder(10, 0, 10, 0));
-  submitPanel.add(btnLockAnswer);
-  
-  // Combine answers and submit in a vertical container
-  JPanel container = new JPanel();
-  container.setLayout(new BoxLayout(container, BoxLayout.Y_AXIS));
-  container.setOpaque(false);
-  container.add(answers);
-  container.add(submitPanel);
-  
-  return container;
-  }
-
-  /**
-   * Helper method: Creates the 4 answer buttons in a 2x2 grid.
-   * @return A JPanel with 4 answer buttons
-   */
-  private JPanel createAnswerButtons() {
-  JPanel answers = new JPanel(new GridLayout(2, 2, 10, 10));
-  answers.setOpaque(false);
-  answers.setBorder(new EmptyBorder(20, 40, 10, 40));
-
-  // Create 4 answer buttons
-  for (int i = 0; i < 4; i++) {
-      int idx = i; // Store index for lambda
-      JButton btn = new JButton("Answer " + (i + 1));
-      styleAnswer(btn);
-      btn.addActionListener(e -> answerClicked(idx));
-      answerButtons[i] = btn;
-      answers.add(btn);
-  }
-  return answers;
-  }
-
-  /**
-   * Helper method: Creates the lock button.
-   * Locks in the selected answer when clicked.
-   * @return A styled JButton for locking in answers
-   */
-  private JButton createSubmitButton() {
-  JButton btn = new JButton("LOCK");
-  stylePrimary(btn);
-  btn.setEnabled(false);  // Disabled until answer is selected
-  btn.setVisible(true);   // Always visible
-  btn.addActionListener(e -> lockAnswer());
-  return btn;
-  }
-
-  // ===========================================================
-  // NETWORKING
-  // ===========================================================
-  private void setNameClicked() {
-  String name = txtUser.getText().trim();
-  if (name.isEmpty()) {
-      lblConnectHint.setText("Please enter a name.");
-      return;
-  }
-  currentName = name;
-  txtUser.setEditable(false);
-  btnSetName.setEnabled(false);
-  lblConnectHint.setText("Name set to: " + name + ". Now click Connect.");
-  }
-
-  private void connectClicked(ActionEvent e) {
-  if (connected) return;
-
-  // Get username from text field
-  String name = txtUser.getText().trim();
-  if (name.isEmpty()) {
-      lblConnectHint.setText("Please enter your name first!");
-      return;
-  }
-  currentName = name;  // Update currentName from text field
-
-  try {
-      String host = txtHost.getText().trim();
-      int port = Integer.parseInt(txtPort.getText().trim());
-
-      socket = new Socket(host, port);
-      out = new ObjectOutputStream(socket.getOutputStream());
-      in = new ObjectInputStream(socket.getInputStream());
-      connected = true;
-
-      appendEvent("Connected to server.");
-      lblConnectHint.setText("Connected as " + currentName + ". Step 2: Check Ready.");
-      btnConnect.setVisible(false);  // Hide the button after connecting
-
-      ConnectionPayload cp = new ConnectionPayload();
-      cp.setPayloadType(PayloadType.CLIENT_CONNECT);
-      cp.setClientName(currentName);
-      send(cp);
-
-      startReaderThread();
-  } catch (Exception ex) {
-      appendEvent("Connect failed: " + ex.getMessage());
-      connected = false;
-  }
-  }
-
-  private void startReaderThread() {
-  Thread t = new Thread(() -> {
-  try {
-  while (connected) {
-  Object obj = in.readObject();
-  if (obj instanceof Payload p) handlePayload(p);
-  }
-  } catch (Exception ex) {
-  appendEvent("Disconnected.");
-  connected = false;
-  }
-  });
-  t.start();
-  }
-
-  private void handlePayload(Payload p) {
-  switch (p.getPayloadType()) {
-      case CLIENT_ID -> {
-          clientId = p.getClientId();
-          appendEvent("Your ID: " + clientId);
-      }
-
-      case MESSAGE -> handleMessagePayload(p);
-
-      case TIMER -> lblTimer.setText("Timer: " + p.getMessage());
-
-      case QUESTION -> handleQA((QAPayload) p);
-
-      case USER_LIST -> handleUserList((UserListPayload) p);
-
-      case POINTS_UPDATE -> appendEvent(p.getMessage());
-
-      default -> {}
-  }
-  }
-
-  /**
-   * Handles MESSAGE payloads from the server.
-   * Separates chat messages (prefixed with [CHAT]) from game events.
-   * @param p The message payload
-   */
-  private void handleMessagePayload(Payload p) {
-  if (p.getMessage() == null) return;
-
-  String msg = p.getMessage();
-
-  // Check if this is a chat message (prefixed with [CHAT])
-  if (msg.startsWith("[CHAT] ")) {
-      // Remove [CHAT] prefix and show in chat panel
-      appendChat(msg.substring(7));
-  } else {
-      // This is a game event, show in events panel
-      appendEvent(msg);
-      
-      // Handle special game events
-      if (msg.contains("GAME OVER")) {
-          txtQuestion.setText("Game over. Click READY to play again.");
-          for (JButton btn : answerButtons) {
-              btn.setEnabled(false);
-          }
-          isReady = false;
-      }
-      if (msg.contains("Trivia Session Starting") || msg.contains("Round 1")) {
-          isReady = false;
-      }
-  }
-  }
-
-  private void handleQA(QAPayload q) {
-  lockedThisRound = false;
-  selectedAnswerIndex = -1;  // Reset selected answer
-  lblCategory.setText("Category: " + q.getCategory());
-  // Set full question text in text area
-  txtQuestion.setText(q.getQuestionText());
-  txtQuestion.setCaretPosition(0); // Scroll to top
-
-  ArrayList<String> ans = q.getAnswers();
-  for (int i = 0; i < 4; i++) {
-      if (ans != null && i < ans.size()) {
-          answerButtons[i].setText(ans.get(i));
-          answerButtons[i].setEnabled(true);
-          // Reset to white matching mockup
-          answerButtons[i].setBackground(Color.WHITE);
-          answerButtons[i].setForeground(new Color(30, 60, 120));
-      } else {
-          answerButtons[i].setText("-");
-          answerButtons[i].setEnabled(false);
-          answerButtons[i].setBackground(new Color(240, 240, 240));
-      }
-  }
-  // Reset lock button
-  btnLockAnswer.setEnabled(false);
-  }
-
-  private void handleUserList(UserListPayload up) {
-  userModel.clear();
-  users.clear();
-
-  for (int i = 0; i < up.getClientIds().size(); i++) {
-      long id = up.getClientIds().get(i);
-      String name = up.getDisplayNames().get(i);
-      int pts = up.getPoints().get(i);
-      boolean locked = up.getLockedIn().get(i);
-      boolean away = up.getAway().get(i);
-      boolean spec = up.getSpectator().get(i);
-
-      User u = new User(id, name, pts, locked, away, spec);
-      users.put(id, u);
-      userModel.addElement(u);
-  }
-  }
-
-  // ===========================================================
-  // ACTIONS
-  // ===========================================================
-  private void answerClicked(int idx) {
-  if (!connected || lockedThisRound || isSpectator || isAway) return;
-
-  // Store selected answer index (don't lock in yet)
-  selectedAnswerIndex = idx;
-
-  // Update button colors: selected = green, others = red, all with black text
-  for (int i = 0; i < answerButtons.length; i++) {
-      answerButtons[i].setOpaque(true);  // Ensure colors show
-      if (i == idx) {
-          // Selected button: green background, black text
-          answerButtons[i].setBackground(new Color(144, 238, 144));  // Light green
-          answerButtons[i].setForeground(Color.BLACK);
-      } else {
-          // Other buttons: red background, black text
-          answerButtons[i].setBackground(new Color(255, 182, 193));  // Light red/pink
-          answerButtons[i].setForeground(Color.BLACK);
-      }
-  }
-
-  // Enable the lock button
-  btnLockAnswer.setEnabled(true);
-  }
-
-  /**
-   * Locks in the selected answer and sends it to the server.
-   */
-  private void lockAnswer() {
-  if (!connected || lockedThisRound || selectedAnswerIndex < 0 || isSpectator || isAway) return;
-
-  // Send answer to server
-  sendCommand("/answer " + selectedAnswerIndex);
-  lockedThisRound = true;
-
-  // Disable all answer buttons but keep colors (green/red)
-  for (int i = 0; i < answerButtons.length; i++) {
-      answerButtons[i].setEnabled(false);
-      // Ensure colors persist after disabling by setting opaque
-      answerButtons[i].setOpaque(true);
-      if (i == selectedAnswerIndex) {
-          // Keep selected button green
-          answerButtons[i].setBackground(new Color(144, 238, 144));  // Light green
-          answerButtons[i].setForeground(Color.BLACK);
-      } else {
-          // Keep other buttons red
-          answerButtons[i].setBackground(new Color(255, 182, 193));  // Light red/pink
-          answerButtons[i].setForeground(Color.BLACK);
-      }
-  }
-  btnLockAnswer.setEnabled(false);
-  }
-
-  /**
-   * Sends a chat message to the server.
-   * Spectators cannot send chat messages.
-   */
-  private void sendChat() {
-  if (!connected) return;
-  
-  // Spectators cannot chat
-  if (isSpectator) {
-  appendEvent("Spectators cannot chat.");
-  return;
-  }
-
-  // Get message from input field
-  String msg = txtChatInput.getText().trim();
-  if (msg.isEmpty()) return;
-
-  // Create payload and send to server
-  Payload p = new Payload();
-  p.setPayloadType(PayloadType.MESSAGE);
-  p.setClientId(clientId);
-  p.setMessage(msg);
-  send(p);
-
-  // Clear the input field
-  txtChatInput.setText("");
-  }
-
-  private void readyClicked() {
-  if (!connected) return;
-  if (isReady) {
-      appendEvent("You are already ready!");
-      return;
-  }
-  sendCommand("/ready");
-  isReady = true;
-  }
-
-  /**
-   * Sends a command to the server (commands start with /).
-   * Examples: /ready, /answer 0, /away, /spectate, /categories geography,science
-   * @param cmd The command string (e.g., "/ready" or "/answer 2")
-   */
-  private void sendCommand(String cmd) {
-  if (!connected) return;
-
-  // Commands are sent as MESSAGE payloads
-  // The server checks if the message starts with / and handles it as a command
-  Payload p = new Payload();
-  p.setPayloadType(PayloadType.MESSAGE);
-  p.setClientId(clientId);
-  p.setMessage(cmd);
-  send(p);
-  }
-
-  private void sendCategories() {
-  if (!connected) return;
-
-  String cats = "";
-  if (chkGeo.isSelected()) cats += "geography,";
-  if (chkSci.isSelected()) cats += "science,";
-  if (chkMath.isSelected()) cats += "math,";
-  if (chkHist.isSelected()) cats += "history,";
-
-  if (!cats.isEmpty()) {
-      cats = cats.substring(0, cats.length() - 1);
-      sendCommand("/categories " + cats);
-  }
-  }
-
-  private void toggleAway() {
-  isAway = chkAway.isSelected();
-  if (isAway) sendCommand("/away");
-  else sendCommand("/back");
-  }
-
-  private void toggleSpectator() {
-  boolean newState = chkSpectator.isSelected();
-  if (newState && !isSpectator) {
-  isSpectator = true;
-  sendCommand("/spectate");
-  }
-  }
-
-  private void showAddQDialog() {
-  if (!connected) {
-  appendEvent("Not connected.");
-  return;
-  }
-
-  String cat = JOptionPane.showInputDialog(frame,
-          "Category (geography, science, math, history):");
-  if (cat == null || cat.trim().isEmpty()) return;
-
-  String q = JOptionPane.showInputDialog(frame, "Question:");
-  if (q == null || q.trim().isEmpty()) return;
-
-  String a1 = JOptionPane.showInputDialog(frame, "Answer A:");
-  String a2 = JOptionPane.showInputDialog(frame, "Answer B:");
-  String a3 = JOptionPane.showInputDialog(frame, "Answer C:");
-  String a4 = JOptionPane.showInputDialog(frame, "Answer D:");
-  String correct = JOptionPane.showInputDialog(frame,
-          "Correct index (0=A, 1=B, 2=C, 3=D):");
-
-  if (a1 == null || a2 == null || a3 == null || a4 == null || correct == null) return;
-
-  String line = cat + "|" + q + "|" + a1 + "|" + a2 + "|" + a3 + "|" + a4 + "|" + correct;
-  sendCommand("/addq " + line);
-  }
-
-  /**
-   * Helper method: Sends a payload to the server.
-   * @param p The payload to send
-   */
-  private void send(Payload p) {
-  try {
-  out.writeObject(p);
-  out.flush();
-  } catch (Exception ex) {
-  appendEvent("Send failed: " + ex.getMessage());
-  }
-  }
-
-  // ===========================================================
-  // HELPERS
-  // ===========================================================
-  /**
-   * Helper method: Creates a styled label with dark blue text.
-   * @param text The text to display on the label
-   * @return A styled JLabel
-   */
-  private JLabel label(String text) {
-  JLabel lbl = new JLabel(text);
-  lbl.setForeground(new Color(30, 60, 120));
-  TextFX.setSubtitleFont(lbl);
-  return lbl;
-  }
-
-  /**
-   * Helper method: Styles primary buttons (like CONNECT, SUBMIT).
-   * Primary buttons are light blue with white text.
-   * @param btn The button to style
-   */
-  private void stylePrimary(JButton btn) {
-  btn.setBackground(new Color(100, 150, 255));
-  btn.setForeground(Color.WHITE);
-  btn.setBorder(new LineBorder(new Color(80, 130, 235), 1, true));
-  TextFX.setSubtitleFont(btn);
-  btn.setFont(TextFX.getSubtitleFont().deriveFont(Font.BOLD, 14f));
-  btn.setPreferredSize(new Dimension(150, 40));
-  }
-
-  /**
-   * Helper method: Styles secondary buttons (like SEND).
-   * Secondary buttons are smaller light blue buttons.
-   * @param btn The button to style
-   */
-  private void styleSecondary(JButton btn) {
-  btn.setBackground(new Color(100, 150, 255));
-  btn.setForeground(Color.WHITE);
-  btn.setBorder(new LineBorder(new Color(80, 130, 235), 1, true));
-  TextFX.setSubtitleFont(btn);
-  btn.setFont(TextFX.getSubtitleFont().deriveFont(Font.BOLD, 12f));
-  btn.setPreferredSize(new Dimension(80, 30));
-  }
-
-  /**
-   * Helper method: Styles answer buttons.
-   * Answer buttons are white with dark blue text and borders.
-   * @param btn The button to style
-   */
-  private void styleAnswer(JButton btn) {
-  btn.setOpaque(true);  // Make sure button is opaque so colors show
-  btn.setBackground(Color.WHITE);
-  btn.setForeground(new Color(30, 60, 120));
-  btn.setBorder(new LineBorder(new Color(200, 200, 200), 1, true));
-  TextFX.setSubtitleFont(btn);
-  btn.setFont(TextFX.getSubtitleFont().deriveFont(Font.PLAIN, 14f));
-  btn.setPreferredSize(new Dimension(250, 40));
-  }
-
-  /**
-   * Helper method: Adds a message to the game events panel.
-   * Automatically scrolls to the bottom to show the latest message.
-   * @param msg The message to display
-   */
-  private void appendEvent(String msg) {
-  txtEvents.append(msg + "\n");
-  txtEvents.setCaretPosition(txtEvents.getDocument().getLength());
-  }
-
-  /**
-   * Helper method: Adds a message to the chat panel.
-   * Automatically scrolls to the bottom to show the latest message.
-   * @param msg The chat message to display
-   */
-  private void appendChat(String msg) {
-  txtChat.append(msg + "\n");
-  txtChat.setCaretPosition(txtChat.getDocument().getLength());
-  }
-
-  }
+ * Demoing bi-directional communication between client and server in a
+ * multi-client scenario
+ */
+public enum Client {
+    INSTANCE;
+
+    static {
+        // statically initialize the client-side LoggerUtil
+        LoggerUtil.LoggerConfig config = new LoggerUtil.LoggerConfig();
+        config.setFileSizeLimit(2048 * 1024); // 2MB
+        config.setFileCount(1);
+        config.setLogLocation("client.log");
+        // Set the logger configuration
+        LoggerUtil.INSTANCE.setConfig(config);
+    }
+    private Socket server = null;
+    private ObjectOutputStream out = null;
+    private ObjectInputStream in = null;
+    final Pattern ipAddressPattern = Pattern
+            .compile("/connect\\s+(\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}:\\d{3,5})");
+    final Pattern localhostPattern = Pattern.compile("/connect\\s+(localhost:\\d{3,5})");
+    private volatile boolean isRunning = true; // volatile for thread-safe visibility
+    private final ConcurrentHashMap<Long, User> knownClients = new ConcurrentHashMap<>();
+    private final User myUser = new User();
+    private Phase currentPhase = Phase.READY;
+    // callback that updates the UI
+    private static final List<IClientEvents> events = new ArrayList<>();
+    private String currentRoom;
+
+    private void error(String message) {
+        LoggerUtil.INSTANCE.severe(TextFX.colorize(String.format("%s", message), Color.RED));
+    }
+
+    // needs to be private now that the enum logic is handling this
+    private Client() {
+        LoggerUtil.INSTANCE.info("Client Created");
+    }
+
+    public void registerCallback(IClientEvents e) {
+        events.add(e);
+    }
+
+    /**
+     * Used for client-side feedback
+     * 
+     * @param str
+     */
+    public void clientSideGameEvent(String str) {
+        passToUICallback(IMessageEvents.class, e -> e.onMessageReceive(Constants.GAME_EVENT_CHANNEL, str));
+    }
+
+    public boolean isMyClientIdSet() {
+        return myUser != null && myUser.getClientId() != Constants.DEFAULT_CLIENT_ID;
+    }
+
+    public boolean isMyClientId(long clientId) {
+        return isMyClientIdSet() && myUser.getClientId() == clientId;
+    }
+
+    public boolean isConnected() {
+        if (server == null) {
+            return false;
+        }
+        // https://stackoverflow.com/a/10241044
+        // Note: these check the client's end of the socket connect; therefore they
+        // don't really help determine if the server had a problem
+        // and is just for lesson's sake
+        return server.isConnected() && !server.isClosed() && !server.isInputShutdown() && !server.isOutputShutdown();
+    }
+
+    /**
+     * Takes an IP address and a port to attempt a socket connection to a server.
+     * 
+     * @param address
+     * @param port
+     * @return true if connection was successful
+     */
+    @Deprecated
+    private boolean connect(String address, int port) {
+        try {
+            server = new Socket(address, port);
+            // channel to send to server
+            out = new ObjectOutputStream(server.getOutputStream());
+            // channel to listen to server
+            in = new ObjectInputStream(server.getInputStream());
+            LoggerUtil.INSTANCE.info("Client connected");
+            // Use CompletableFuture to run listenToServer() in a separate thread
+            CompletableFuture.runAsync(this::listenToServer);
+        } catch (UnknownHostException e) {
+            LoggerUtil.INSTANCE.severe(
+                    String.format("Unable to connect to host %s:%d (unknown host)", address, port), e);
+        } catch (IOException e) {
+            LoggerUtil.INSTANCE.severe(
+                    String.format("I/O error while connecting to %s:%d", address, port), e);
+        }
+        return isConnected();
+    }
+
+    /**
+     * Takes an ip address and a port to attempt a socket connection to a server.
+     * 
+     * @param address
+     * @param port
+     * @param username
+     * @return true if connection was successful
+     */
+    public boolean connect(String address, int port, String username) {
+        myUser.setClientName(username);
+        try {
+            server = new Socket(address, port);
+            // channel to send to server
+            out = new ObjectOutputStream(server.getOutputStream());
+            // channel to listen to server
+            in = new ObjectInputStream(server.getInputStream());
+            LoggerUtil.INSTANCE.info("Client connected");
+            // Use CompletableFuture to run listenToServer() in a separate thread
+            CompletableFuture.runAsync(this::listenToServer);
+            sendClientName(myUser.getClientName());// sync follow-up data (handshake)
+        } catch (UnknownHostException e) {
+            LoggerUtil.INSTANCE.severe(
+                    String.format("Unable to connect to host %s:%d (unknown host)", address, port), e);
+        } catch (IOException e) {
+            LoggerUtil.INSTANCE.severe(
+                    String.format("I/O error while connecting to %s:%d", address, port), e);
+        }
+        return isConnected();
+    }
+
+    /**
+     * <p>
+     * Check if the string contains the <i>connect</i> command
+     * followed by an IP address and port or localhost and port.
+     * </p>
+     * <p>
+     * Example format: 123.123.123.123:3000
+     * </p>
+     * <p>
+     * Example format: localhost:3000
+     * </p>
+     * https://www.w3schools.com/java/java_regex.asp
+     * 
+     * @param text
+     * @return true if the text is a valid connection command
+     */
+    private boolean isConnection(String text) {
+        Matcher ipMatcher = ipAddressPattern.matcher(text);
+        Matcher localhostMatcher = localhostPattern.matcher(text);
+        return ipMatcher.matches() || localhostMatcher.matches();
+    }
+
+    /**
+     * Controller for handling various text commands.
+     * <p>
+     * Add more here as needed
+     * </p>
+     * 
+     * @param text
+     * @return true if the text was a command or triggered a command
+     * @throws IOException
+     */
+    private boolean processClientCommand(String text) throws IOException {
+        boolean wasCommand = false;
+        if (text.startsWith(Constants.COMMAND_TRIGGER)) {
+            text = text.substring(1); // remove the /
+            if (isConnection("/" + text)) {
+                if (myUser.getClientName() == null || myUser.getClientName().isEmpty()) {
+                    LoggerUtil.INSTANCE.warning(
+                            TextFX.colorize("Please set your name via /name <name> before connecting", Color.RED));
+                    return true;
+                }
+                String[] parts = text.trim().replaceAll(" +", " ").split(" ")[1].split(":");
+                connect(parts[0].trim(), Integer.parseInt(parts[1].trim()));
+                sendClientName(myUser.getClientName());// sync follow-up data (handshake)
+                wasCommand = true;
+            } else if (text.startsWith(Command.NAME.command)) {
+                text = text.replace(Command.NAME.command, "").trim();
+                if (text == null || text.length() == 0) {
+                    LoggerUtil.INSTANCE
+                            .warning(TextFX.colorize("This command requires a name as an argument", Color.RED));
+                    return true;
+                }
+                myUser.setClientName(text);// temporary until we get a response from the server
+                LoggerUtil.INSTANCE.info(TextFX.colorize(String.format("Name set to %s", myUser.getClientName()),
+                        Color.YELLOW));
+                wasCommand = true;
+            } else if (text.equalsIgnoreCase(Command.LIST_USERS.command)) {
+                String message = TextFX.colorize("Known clients:\n", Color.CYAN);
+                LoggerUtil.INSTANCE.info(TextFX.colorize("Known clients:", Color.CYAN));
+                message += String.join("\n", knownClients.values().stream()
+                        .map(c -> String.format("%s %s %s %s",
+                                c.getDisplayName(),
+                                c.getClientId() == myUser.getClientId() ? " (you)" : "",
+                                c.isReady() ? "[x]" : "[ ]",
+                                c.didTakeTurn() ? "[T]" : "[ ]"))
+                        .toList());
+                LoggerUtil.INSTANCE.info(message);
+                wasCommand = true;
+            } else if (Command.QUIT.command.equalsIgnoreCase(text)) {
+                close();
+                wasCommand = true;
+            } else if (Command.DISCONNECT.command.equalsIgnoreCase(text)) {
+                sendDisconnect();
+                wasCommand = true;
+            } else if (text.startsWith(Command.REVERSE.command)) {
+                text = text.replace(Command.REVERSE.command, "").trim();
+                sendReverse(text);
+                wasCommand = true;
+            } else if (text.startsWith(Command.CREATE_ROOM.command)) {
+                text = text.replace(Command.CREATE_ROOM.command, "").trim();
+                if (text == null || text.length() == 0) {
+                    LoggerUtil.INSTANCE
+                            .warning(TextFX.colorize("This command requires a room name as an argument", Color.RED));
+                    return true;
+                }
+                sendRoomAction(text, RoomAction.CREATE);
+                wasCommand = true;
+            } else if (text.startsWith(Command.JOIN_ROOM.command)) {
+                text = text.replace(Command.JOIN_ROOM.command, "").trim();
+                if (text == null || text.length() == 0) {
+                    LoggerUtil.INSTANCE
+                            .warning(TextFX.colorize("This command requires a room name as an argument", Color.RED));
+                    return true;
+                }
+                sendRoomAction(text, RoomAction.JOIN);
+                wasCommand = true;
+            } else if (text.startsWith(Command.LEAVE_ROOM.command) || text.startsWith("leave")) {
+                sendRoomAction(text, RoomAction.LEAVE);
+                wasCommand = true;
+            } else if (text.startsWith(Command.LIST_ROOMS.command)) {
+                text = text.replace(Command.LIST_ROOMS.command, "").trim();
+
+                sendRoomAction(text, RoomAction.LIST);
+                wasCommand = true;
+            } else if (text.equalsIgnoreCase(Command.READY.command)) {
+                sendReady();
+                wasCommand = true;
+            } else if (text.startsWith(Command.EXAMPLE_TURN.command)) {
+                text = text.replace(Command.EXAMPLE_TURN.command, "").trim();
+
+                sendDoTurn(text);
+                wasCommand = true;
+            }
+        }
+        return wasCommand;
+    }
+
+    // Start Send*() methods
+    public void sendDoTurn(String text) throws IOException {
+        ReadyPayload rp = new ReadyPayload();
+        rp.setPayloadType(PayloadType.TURN);
+        rp.setReady(true);
+        rp.setMessage(text);
+        sendToServer(rp);
+    }
+
+    public void sendReady() throws IOException {
+        ReadyPayload rp = new ReadyPayload();
+        rp.setPayloadType(PayloadType.READY);
+        rp.setReady(true);
+        sendToServer(rp);
+    }
+
+    public void sendRoomAction(String roomName, RoomAction roomAction) throws IOException {
+        Payload payload = new Payload();
+        payload.setMessage(roomName);
+        switch (roomAction) {
+            case RoomAction.CREATE:
+                payload.setPayloadType(PayloadType.ROOM_CREATE);
+                break;
+            case RoomAction.JOIN:
+                payload.setPayloadType(PayloadType.ROOM_JOIN);
+                break;
+            case RoomAction.LEAVE:
+                payload.setPayloadType(PayloadType.ROOM_LEAVE);
+                break;
+            case RoomAction.LIST:
+                payload.setPayloadType(PayloadType.ROOM_LIST);
+                break;
+            default:
+                LoggerUtil.INSTANCE.warning(TextFX.colorize("Invalid room action", Color.RED));
+                break;
+        }
+        sendToServer(payload);
+    }
+
+    private void sendReverse(String message) throws IOException {
+        Payload payload = new Payload();
+        payload.setMessage(message);
+        payload.setPayloadType(PayloadType.REVERSE);
+        sendToServer(payload);
+
+    }
+
+    public void sendDisconnect() throws IOException {
+        Payload payload = new Payload();
+        payload.setPayloadType(PayloadType.DISCONNECT);
+        sendToServer(payload);
+    }
+
+    public void sendMessage(String message) throws IOException {
+        if (processClientCommand(message)) {
+            return;
+        }
+        Payload payload = new Payload();
+        payload.setMessage(message);
+        payload.setPayloadType(PayloadType.MESSAGE);
+        sendToServer(payload);
+    }
+
+    private void sendClientName(String name) throws IOException {
+        ConnectionPayload payload = new ConnectionPayload();
+        payload.setClientName(name);
+        payload.setPayloadType(PayloadType.CLIENT_CONNECT);
+        sendToServer(payload);
+    }
+
+    private void sendToServer(Payload payload) throws IOException {
+        if (isConnected()) {
+            out.writeObject(payload);
+            out.flush();
+        } else {
+            LoggerUtil.INSTANCE.warning(
+                    "Not connected to server (hint: type `/connect host:port` without the quotes and replace host/port with the necessary info)");
+        }
+    }
+    // End Send*() methods
+
+    public void start() throws IOException {
+        LoggerUtil.INSTANCE.info("Client starting");
+
+        CompletableFuture<Void> inputFuture = CompletableFuture.runAsync(this::listenToInput);
+
+        inputFuture.join();
+    }
+
+    private void listenToServer() {
+        try {
+            while (isRunning && isConnected()) {
+                Payload fromServer = (Payload) in.readObject();
+                if (fromServer != null) {
+                    processPayload(fromServer);
+
+                } else {
+                    LoggerUtil.INSTANCE.info("Server disconnected");
+                    break;
+                }
+            }
+        } catch (ClassCastException | ClassNotFoundException cce) {
+            LoggerUtil.INSTANCE.severe("Error reading object as specified type:", cce);
+        } catch (IOException e) {
+            if (isRunning) {
+                LoggerUtil.INSTANCE.warning("Connection dropped", e);
+            }
+        } catch (Exception e) {
+            LoggerUtil.INSTANCE.severe("Unexpected error in listenToServer()", e);
+        } finally {
+            closeServerConnection();
+        }
+        LoggerUtil.INSTANCE.info("listenToServer thread stopped");
+    }
+
+    private void processPayload(Payload payload) {
+        switch (payload.getPayloadType()) {
+            case CLIENT_CONNECT:// unused
+                break;
+            case CLIENT_ID:
+                processClientData(payload);
+                break;
+            case DISCONNECT:
+                processDisconnect(payload);
+                break;
+            case MESSAGE:
+                processMessage(payload);
+            case REVERSE:
+                processReverse(payload);
+                break;
+            case ROOM_CREATE: // unused
+                break;
+            case ROOM_JOIN:
+                processRoomAction(payload);
+                break;
+            case ROOM_LEAVE:
+                processRoomAction(payload);
+                break;
+            case SYNC_CLIENT:
+                processRoomAction(payload);
+                break;
+            case ROOM_LIST:
+                processRoomsList(payload);
+                break;
+            case PayloadType.READY:
+                processReadyStatus(payload, false);
+                break;
+            case PayloadType.SYNC_READY:
+                processReadyStatus(payload, true);
+                break;
+            case PayloadType.RESET_READY:
+                processResetReady();
+                break;
+            case PayloadType.PHASE:
+                processPhase(payload);
+                break;
+            case PayloadType.TURN:
+            case PayloadType.SYNC_TURN:
+                processTurn(payload);
+                break;
+            case PayloadType.RESET_TURN:
+                processResetTurn();
+                break;
+            case PayloadType.TIME:
+                processCurrentTimer(payload);
+                break;
+            case PayloadType.POINTS:
+            case PayloadType.POINTS_UPDATE:
+                processPoints(payload);
+                break;
+            case PayloadType.QUESTION:
+                processQuestion(payload);
+                break;
+            case PayloadType.USER_LIST:
+                processUserList(payload);
+                break;
+            case PayloadType.TIMER:
+                processCurrentTimer(payload);
+                break;
+            default:
+                LoggerUtil.INSTANCE.warning(TextFX.colorize("Unhandled payload type", Color.YELLOW));
+                break;
+
+        }
+    }
+
+    public String getDisplayNameFromId(long id) {
+        LoggerUtil.INSTANCE.info(String.format("Getting display name for client id %s", id));
+        if (id == Constants.DEFAULT_CLIENT_ID) {
+            return String.format("Room[%s]", currentRoom);
+        }
+        if (knownClients.containsKey(id)) {
+            return knownClients.get(id).getDisplayName();
+        }
+        if (isMyClientId(id)) {
+            return myUser.getDisplayName();
+        }
+        return "[Unknown]";
+    }
+
+    private <T> void passToUICallback(Class<T> type, java.util.function.Consumer<T> consumer) {
+        try {
+            for (IClientEvents event : events) {
+                if (type.isInstance(event)) {
+                    consumer.accept(type.cast(event));
+                }
+            }
+        } catch (Exception e) {
+            LoggerUtil.INSTANCE.severe("Error passing to callback", e);
+        }
+    }
+
+    private void processPoints(Payload payload) {
+        if (!(payload instanceof PointsPayload)) {
+            error("Invalid payload subclass for processPoints");
+            return;
+        }
+        PointsPayload pp = (PointsPayload) payload;
+        long targetId = pp.getTargetClientId();
+        int pts = pp.getPoints();
+        if (targetId == Constants.DEFAULT_CLIENT_ID || targetId == 0) {
+            knownClients.values().forEach(cp -> cp.setPoints(-1));
+
+            passToUICallback(IPointsEvent.class, e -> e.onPointsUpdate(Constants.DEFAULT_CLIENT_ID, -1));
+        } else if (knownClients.containsKey(targetId)) {
+            knownClients.get(targetId).setPoints(pts);
+
+            passToUICallback(IPointsEvent.class, e -> e.onPointsUpdate(targetId, pts));
+        }
+    }
+
+    private void processCurrentTimer(Payload payload) {
+        if (!(payload instanceof TimerPayload)) {
+            error("Invalid payload subclass for processCurrentTimer");
+            return;
+        }
+        TimerPayload timerPayload = (TimerPayload) payload;
+
+        passToUICallback(ITimeEvents.class, e -> e.onTimerUpdate(timerPayload.getTimerType(), timerPayload.getTime()));
+    }
+
+    private void processResetTurn() {
+        knownClients.values().forEach(cp -> cp.setTookTurn(false));
+        passToUICallback(ITurnEvent.class, e -> e.onTookTurn(Constants.DEFAULT_CLIENT_ID, false));
+    }
+
+    private void processTurn(Payload payload) {
+        if (!(payload instanceof ReadyPayload)) {
+            error("Invalid payload subclass for processTurn");
+            return;
+        }
+        ReadyPayload rp = (ReadyPayload) payload;
+        if (!knownClients.containsKey(rp.getClientId())) {
+            LoggerUtil.INSTANCE.severe(String.format("Received turn status for client id %s who is not known",
+                    rp.getClientId()));
+            return;
+        }
+        User cp = knownClients.get(rp.getClientId());
+        cp.setTookTurn(rp.isReady());
+        if (payload.getPayloadType() != PayloadType.SYNC_TURN) {
+            String message = String.format("%s %s their turn", cp.getDisplayName(),
+                    cp.didTakeTurn() ? "took" : "reset");
+            LoggerUtil.INSTANCE.info(message);
+            clientSideGameEvent(String.format("%s finished their turn",
+                    cp.getDisplayName()));
+        }
+
+        passToUICallback(ITurnEvent.class, e -> e.onTookTurn(cp.getClientId(), cp.didTakeTurn()));
+
+    }
+
+    private void processPhase(Payload payload) {
+        currentPhase = Enum.valueOf(Phase.class, payload.getMessage());
+        passToUICallback(IPhaseEvent.class, e -> e.onReceivePhase(currentPhase));
+    }
+
+    private void processResetReady() {
+        knownClients.values().forEach(cp -> {
+            cp.setReady(false);
+            cp.setTookTurn(false);
+            cp.setPoints(-1);
+        });
+
+        passToUICallback(IReadyEvent.class, e -> e.onReceiveReady(Constants.DEFAULT_CLIENT_ID, false, true));
+        passToUICallback(ITurnEvent.class, e -> e.onTookTurn(Constants.DEFAULT_CLIENT_ID, false));
+        passToUICallback(IPointsEvent.class, e -> e.onPointsUpdate(Constants.DEFAULT_CLIENT_ID, -1));
+    }
+
+    private void processReadyStatus(Payload payload, boolean isQuiet) {
+        if (!(payload instanceof ReadyPayload)) {
+            error("Invalid payload subclass for processRoomsList");
+            return;
+        }
+        ReadyPayload rp = (ReadyPayload) payload;
+        if (!knownClients.containsKey(rp.getClientId())) {
+            LoggerUtil.INSTANCE.severe(String.format("Received ready status [%s] for client id %s who is not known",
+                    rp.isReady() ? "ready" : "not ready", rp.getClientId()));
+            return;
+        }
+        User cp = knownClients.get(rp.getClientId());
+        cp.setReady(rp.isReady());
+        if (!isQuiet) {
+            LoggerUtil.INSTANCE.info(
+                    String.format("%s is %s", cp.getDisplayName(),
+                            rp.isReady() ? "ready" : "not ready"));
+        }
+
+        passToUICallback(IReadyEvent.class, e -> e.onReceiveReady(cp.getClientId(), cp.isReady(), isQuiet));
+    }
+
+    private void processRoomsList(Payload payload) {
+        if (!(payload instanceof RoomResultPayload)) {
+            error("Invalid payload subclass for processRoomsList");
+            return;
+        }
+        RoomResultPayload rrp = (RoomResultPayload) payload;
+        List<String> rooms = rrp.getRooms();
+        passToUICallback(IRoomEvents.class, e -> e.onReceiveRoomList(rooms, rrp.getMessage()));
+
+        if (rooms == null || rooms.isEmpty()) {
+            LoggerUtil.INSTANCE.warning(
+                    TextFX.colorize("No rooms found matching your query",
+                            Color.RED));
+            return;
+        }
+        LoggerUtil.INSTANCE.info(TextFX.colorize("Room Results:", Color.PURPLE));
+        LoggerUtil.INSTANCE.info(
+                String.join(System.lineSeparator(), rooms));
+    }
+
+    private void processClientData(Payload payload) {
+        if (myUser.getClientId() != Constants.DEFAULT_CLIENT_ID) {
+            LoggerUtil.INSTANCE.warning(TextFX.colorize("Client ID already set, this shouldn't happen", Color.YELLOW));
+
+        }
+        myUser.setClientId(payload.getClientId());
+        myUser.setClientName(((ConnectionPayload) payload).getClientName());
+        knownClients.put(myUser.getClientId(), myUser);
+        LoggerUtil.INSTANCE.info(TextFX.colorize("Connected", Color.GREEN));
+
+        passToUICallback(IConnectionEvents.class, e -> e.onReceiveClientId(myUser.getClientId()));
+    }
+
+    private void processDisconnect(Payload payload) {
+        passToUICallback(IConnectionEvents.class, e -> e.onClientDisconnect(payload.getClientId()));
+        if (isMyClientId(payload.getClientId())) {
+            knownClients.clear();
+            myUser.reset();
+            LoggerUtil.INSTANCE.info(TextFX.colorize("You disconnected", Color.RED));
+        } else if (knownClients.containsKey(payload.getClientId())) {
+            User disconnectedUser = knownClients.remove(payload.getClientId());
+            if (disconnectedUser != null) {
+                LoggerUtil.INSTANCE
+                        .info(TextFX.colorize(String.format("%s disconnected", disconnectedUser.getDisplayName()),
+                                Color.RED));
+            }
+        }
+
+    }
+
+    private void processRoomAction(Payload payload) {
+        if (!(payload instanceof ConnectionPayload)) {
+            error("Invalid payload subclass for processRoomAction");
+            return;
+        }
+        ConnectionPayload connectionPayload = (ConnectionPayload) payload;
+        if (connectionPayload.getClientId() == Constants.DEFAULT_CLIENT_ID) {
+            knownClients.clear();
+
+            passToUICallback(IRoomEvents.class, e -> e.onRoomAction(
+                    Constants.DEFAULT_CLIENT_ID,
+                    connectionPayload.getMessage(),
+                    false,
+                    true));
+            return;
+        }
+        switch (connectionPayload.getPayloadType()) {
+
+            case ROOM_LEAVE:
+                if (knownClients.containsKey(connectionPayload.getClientId())) {
+                    passToUICallback(IRoomEvents.class, e -> e.onRoomAction(
+                            connectionPayload.getClientId(),
+                            connectionPayload.getMessage(),
+                            false,
+                            false));
+                    knownClients.remove(connectionPayload.getClientId());
+                }
+                if (connectionPayload.getMessage() != null) {
+                    LoggerUtil.INSTANCE.info(TextFX.colorize(connectionPayload.getMessage(), Color.YELLOW));
+                }
+
+                break;
+            case ROOM_JOIN:
+                if (connectionPayload.getMessage() != null && isMyClientId(connectionPayload.getClientId())) {
+                    currentRoom = connectionPayload.getMessage();
+                    LoggerUtil.INSTANCE.info(TextFX.colorize(String.format("Joined %s", currentRoom), Color.GREEN));
+
+                }
+            case SYNC_CLIENT:
+                if (!knownClients.containsKey(connectionPayload.getClientId())) {
+                    User user = new User();
+                    user.setClientId(connectionPayload.getClientId());
+                    user.setClientName(connectionPayload.getClientName());
+                    knownClients.put(connectionPayload.getClientId(), user);
+                }
+                passToUICallback(IRoomEvents.class, e -> e.onRoomAction(
+                        connectionPayload.getClientId(),
+                        connectionPayload.getMessage(),
+                        true,
+                        connectionPayload.getPayloadType() == PayloadType.SYNC_CLIENT));
+                break;
+            default:
+                error("Invalid payload type for processRoomAction");
+                break;
+        }
+    }
+
+    private void processMessage(Payload payload) {
+        LoggerUtil.INSTANCE.info(TextFX.colorize(payload.getMessage(), Color.BLUE));
+
+        passToUICallback(IMessageEvents.class, e -> e.onMessageReceive(payload.getClientId(),
+                payload.getMessage()));
+    }
+
+    private void processReverse(Payload payload) {
+        LoggerUtil.INSTANCE.info(TextFX.colorize(payload.getMessage(), Color.PURPLE));
+
+        passToUICallback(IMessageEvents.class, e -> e.onMessageReceive(payload.getClientId(),
+                payload.getMessage()));
+    }
+
+    private void processQuestion(Payload payload) {
+        if (!(payload instanceof QAPayload)) {
+            error("Invalid payload subclass for processQuestion");
+            return;
+        }
+        QAPayload qa = (QAPayload) payload;
+        LoggerUtil.INSTANCE.info(TextFX.colorize("Question received: " + qa.getQuestionText(), Color.CYAN));
+        passToUICallback(IQuestionEvent.class, e -> e.onQuestion(qa));
+    }
+
+    private void processUserList(Payload payload) {
+        if (!(payload instanceof UserListPayload)) {
+            error("Invalid payload subclass for processUserList");
+            return;
+        }
+        UserListPayload ulp = (UserListPayload) payload;
+        LoggerUtil.INSTANCE
+                .info(TextFX.colorize("User list updated: " + ulp.getClientIds().size() + " users", Color.CYAN));
+        passToUICallback(IUserListEvent.class, e -> e.onUserListUpdate(ulp));
+    }
+    // End process*() methods
+
+    @Deprecated
+    private void listenToInput() {
+        try (Scanner si = new Scanner(System.in)) {
+            LoggerUtil.INSTANCE.info("Waiting for input");
+            while (isRunning) {
+                String userInput = si.nextLine();
+                if (!processClientCommand(userInput)) {
+                    sendMessage(userInput);
+                }
+            }
+        } catch (IOException ioException) {
+            LoggerUtil.INSTANCE.severe("Error in listenToInput()", ioException);
+        }
+        LoggerUtil.INSTANCE.info("listenToInput thread stopped");
+    }
+
+    private void close() {
+        isRunning = false;
+        closeServerConnection();
+        LoggerUtil.INSTANCE.info("Client terminated");
+    }
+
+    private void closeServerConnection() {
+        try {
+            if (out != null) {
+                LoggerUtil.INSTANCE.info("Closing output stream");
+                out.close();
+            }
+        } catch (Exception e) {
+            LoggerUtil.INSTANCE.warning("Failed to close output stream", e);
+        }
+        try {
+            if (in != null) {
+                LoggerUtil.INSTANCE.info("Closing input stream");
+                in.close();
+            }
+        } catch (Exception e) {
+            LoggerUtil.INSTANCE.warning("Failed to close input stream", e);
+        }
+        try {
+            if (server != null) {
+                LoggerUtil.INSTANCE.info("Closing connection");
+                server.close();
+                LoggerUtil.INSTANCE.info("Closed Socket");
+            }
+        } catch (IOException e) {
+            LoggerUtil.INSTANCE.severe("Socket error while closing connection", e);
+        }
+    }
+
+    @Deprecated
+    public static void main(String[] args) {
+        Client client = Client.INSTANCE;
+        try {
+            client.start();
+        } catch (IOException e) {
+            LoggerUtil.INSTANCE.severe("Exception from main()", e);
+        }
+    }
+}
