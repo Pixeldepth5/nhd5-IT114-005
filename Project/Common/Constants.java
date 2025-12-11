@@ -9,4 +9,11 @@ public abstract class Constants {
     public static final String COMMAND_TRIGGER = "/";
     public static final String SINGLE_SPACE = " ";
     public static final long DEFAULT_CLIENT_ID = -1;
+
+    // UI helpers
+    public static final String NOT_CONNECTED = "Not connected";
+    public static final long GAME_EVENT_CHANNEL = 0;
+
+    // Common room names
+    public static final String LOBBY = "lobby";
 }

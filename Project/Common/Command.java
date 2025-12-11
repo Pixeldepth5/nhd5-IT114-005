@@ -15,7 +15,10 @@ public enum Command {
     JOIN_ROOM("joinroom"),
     LEAVE_ROOM("leaveroom"),
     NAME("name"),
-    LIST_USERS("users");
+    LIST_USERS("users"),
+    LIST_ROOMS("listrooms"),
+    READY("ready"),
+    EXAMPLE_TURN("exampleturn");
 
     public final String command;
     private static final HashMap<String, Command> BY_COMMAND = new HashMap<>();
