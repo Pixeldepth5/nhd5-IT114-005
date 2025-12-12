@@ -30,7 +30,8 @@ public class ReadyView extends JPanel implements IPhaseEvent, IUserListEvent {
         JButton readyButton = new JButton("Ready");
         readyButton.addActionListener(_ -> {
             try {
-                Client.INSTANCE.sendReady();
+                // Server expects the slash command; this makes the button actually useful.
+                Client.INSTANCE.sendMessage("/ready");
             } catch (IOException e1) {
                 e1.printStackTrace();
             }

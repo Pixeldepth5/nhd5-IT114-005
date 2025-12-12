@@ -8,6 +8,7 @@ import java.util.List;
 
 import javax.swing.JPanel;
 import javax.swing.JSplitPane;
+import javax.swing.SwingUtilities;
 
 import Client.CardViewName;
 import Client.Client;
@@ -38,7 +39,9 @@ public class ChatGameView extends JPanel implements IRoomEvents, IPhaseEvent {
         splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, gameView, chatView);
         splitPane.setResizeWeight(0.6);
         splitPane.setOneTouchExpandable(false);
-        splitPane.setEnabled(false);
+        // Keep the split pane enabled so the chat panel can receive focus/clicks.
+        // If you don't want users dragging the divider, make it non-draggable instead.
+        splitPane.setDividerSize(0);
 
         add(splitPane, BorderLayout.CENTER);
         gameView.addComponentListener(new ComponentAdapter() {
@@ -54,14 +57,23 @@ public class ChatGameView extends JPanel implements IRoomEvents, IPhaseEvent {
     public void showGameView() {
         gameView.setVisible(true);
         splitPane.setDividerLocation(0.6);
+        // When the game view is visible, you may want a divider. Keep it non-draggable by default.
+        // Avoid duplicate player lists (GameView already shows Players on the right).
+        chatView.setShowUserList(false);
     }
 
     public void showChatOnlyView() {
         gameView.setVisible(false);
         chatView.setVisible(true);
-        splitPane.setDividerLocation(1.0);
+        // With a horizontal split (left=game, right=chat), a divider location near 0
+        // gives almost all space to the chat panel.
+        splitPane.setDividerLocation(0.0);
         revalidate();
         repaint();
+        // Ensure the lobby chat input is ready to type into immediately.
+        SwingUtilities.invokeLater(() -> chatView.focusInput());
+        // In lobby, show the Players list next to chat.
+        chatView.setShowUserList(true);
 
     }
 

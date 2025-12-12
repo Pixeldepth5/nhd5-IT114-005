@@ -28,3 +28,6 @@ sports|How many players are on the field for one soccer team during play?|9|10|1
 sports|How many points is a three-pointer worth in basketball?|1|2|3|4|2
 sports|Which sport uses a bat, ball, and bases?|Soccer|Cricket|Tennis|Baseball|3
 sports|In tennis, what word is used for a score of zero?|Zero|Blank|Love|Nil|2
+
+geography|what the largest contient?|anartica|north america|egypt|europe|0
+math|what 4 by 5|15|30|20|10|2

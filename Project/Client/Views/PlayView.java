@@ -11,6 +11,8 @@ import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 
@@ -18,25 +20,28 @@ import Client.Client;
 import Client.Interfaces.IMessageEvents;
 import Client.Interfaces.IQuestionEvent;
 import Client.Interfaces.ITimeEvents;
+import Client.Interfaces.IUserListEvent;
 import Common.Constants;
 import Common.Phase;
 import Common.QAPayload;
 import Common.TimerType;
+import Common.UserListPayload;
 
 /**
  * PlayView shows the trivia question and answer buttons.
  */
-public class PlayView extends JPanel implements IQuestionEvent, ITimeEvents, IMessageEvents {
+public class PlayView extends JPanel implements IQuestionEvent, ITimeEvents, IMessageEvents, IUserListEvent {
     private final JLabel categoryLabel = new JLabel("Category: ");
     private final JLabel questionLabel = new JLabel("Question will appear here");
     private final JLabel timerLabel = new JLabel("Timer: --");
+    private final JTextArea playersArea = new JTextArea();
     private final JButton[] answerButtons = new JButton[4];
     private final JLabel statusLabel = new JLabel(" ");
     private List<String> currentAnswers = new ArrayList<>();
     private int lockedIndex = -1;
     private int correctAnswerIndex = -1;
     private boolean answerRevealed = false;
-    private String myDisplayName = "";
+    private String myDisplayName = ""; // reserved if server starts sending per-user feedback
 
     public PlayView(String name) {
         super(new BorderLayout(5, 5));
@@ -47,6 +52,18 @@ public class PlayView extends JPanel implements IQuestionEvent, ITimeEvents, IMe
         questionPanel.add(categoryLabel);
         questionPanel.add(questionLabel);
         questionPanel.add(timerLabel);
+
+        // Compact players list under the round timer
+        playersArea.setEditable(false);
+        playersArea.setRows(4);
+        playersArea.setLineWrap(true);
+        playersArea.setWrapStyleWord(true);
+        playersArea.setBorder(BorderFactory.createTitledBorder("Players"));
+        playersArea.setFont(playersArea.getFont().deriveFont(11f));
+        JScrollPane playersScroll = new JScrollPane(playersArea);
+        playersScroll.setBorder(BorderFactory.createEmptyBorder());
+        questionPanel.add(playersScroll);
+
         add(questionPanel, BorderLayout.NORTH);
 
         JPanel answersPanel = new JPanel(new GridLayout(2, 2, 8, 8));
@@ -70,7 +87,8 @@ public class PlayView extends JPanel implements IQuestionEvent, ITimeEvents, IMe
         char letter = (char) ('A' + idx);
         statusLabel.setText("Answer sent: " + letter);
         lockedIndex = idx;
-        highlightChoice(idx);
+        // Requirement: when user locks in, make that choice green and the rest red.
+        lockInColors(idx);
         try {
             Client.INSTANCE.sendMessage("/answer " + idx);
         } catch (IOException e) {
@@ -100,11 +118,16 @@ public class PlayView extends JPanel implements IQuestionEvent, ITimeEvents, IMe
         }
     }
 
-    private void highlightChoice(int idx) {
-        // Initially show cyan for selected answer
-        for (int i = 0; i < answerButtons.length; i++) {
-            answerButtons[i].setBackground(i == idx ? Color.CYAN : UIManager.getColor("Button.background"));
-        }
+    private void lockInColors(int idx) {
+        SwingUtilities.invokeLater(() -> {
+            for (int i = 0; i < answerButtons.length; i++) {
+                if (i >= currentAnswers.size()) {
+                    answerButtons[i].setBackground(UIManager.getColor("Button.background"));
+                    continue;
+                }
+                answerButtons[i].setBackground(i == idx ? Color.GREEN : Color.RED);
+            }
+        });
     }
 
     private void colorAnswerButtons(boolean isCorrect) {
@@ -136,15 +159,21 @@ public class PlayView extends JPanel implements IQuestionEvent, ITimeEvents, IMe
             if (correctIdx >= 0 && correctIdx < answerButtons.length) {
                 answerButtons[correctIdx].setBackground(Color.GREEN);
             }
-            // Color wrong answers red (if user clicked wrong)
-            if (lockedIndex >= 0 && lockedIndex != correctIdx) {
-                answerButtons[lockedIndex].setBackground(Color.RED);
-            }
-            // Color other non-selected answers red
+            // Color other answers red (including user's wrong selection)
             for (int i = 0; i < answerButtons.length; i++) {
-                if (i != correctIdx && i != lockedIndex && i < currentAnswers.size()) {
+                if (i != correctIdx && i < currentAnswers.size()) {
                     answerButtons[i].setBackground(Color.RED);
                 }
+            }
+
+            // Status text: correct / wrong / no answer
+            if (lockedIndex < 0) {
+                statusLabel.setText("No answer locked in. Correct was " + (char) ('A' + correctIdx) + ".");
+            } else if (lockedIndex == correctIdx) {
+                statusLabel.setText("Correct! You picked " + (char) ('A' + lockedIndex) + ".");
+            } else {
+                statusLabel.setText("Wrong. You picked " + (char) ('A' + lockedIndex) + "; correct was "
+                        + (char) ('A' + correctIdx) + ".");
             }
         });
     }
@@ -191,38 +220,6 @@ public class PlayView extends JPanel implements IQuestionEvent, ITimeEvents, IMe
                     }
                 }
             }
-            // Also check for immediate feedback if we've locked in
-            else if (lockedIndex >= 0 && !answerRevealed) {
-                // Try to parse if message is about our answer
-                // Format: "DisplayName locked in the CORRECT answer!" or "DisplayName locked in the WRONG answer!"
-                // We'll check by seeing if message contains the pattern and we just locked in
-                // Note: This is a heuristic - ideally server would send direct feedback
-                if (message.contains("locked in the CORRECT answer")) {
-                    // Could be about us - color immediately if we selected correctly
-                    SwingUtilities.invokeLater(() -> {
-                        Color currentBg = answerButtons[lockedIndex].getBackground();
-                        if (currentBg.equals(Color.CYAN) || currentBg.getRGB() == Color.CYAN.getRGB()) {
-                            // Assume this is about us if we just locked in
-                            // Color our selection green, others red
-                            for (int i = 0; i < answerButtons.length; i++) {
-                                if (i == lockedIndex) {
-                                    answerButtons[i].setBackground(Color.GREEN);
-                                } else if (i < currentAnswers.size()) {
-                                    answerButtons[i].setBackground(Color.RED);
-                                }
-                            }
-                        }
-                    });
-                } else if (message.contains("locked in the WRONG answer")) {
-                    // Color our selection red (correct will be revealed later)
-                    SwingUtilities.invokeLater(() -> {
-                        Color currentBg = answerButtons[lockedIndex].getBackground();
-                        if (currentBg.equals(Color.CYAN) || currentBg.getRGB() == Color.CYAN.getRGB()) {
-                            answerButtons[lockedIndex].setBackground(Color.RED);
-                        }
-                    });
-                }
-            }
         }
     }
 
@@ -237,6 +234,25 @@ public class PlayView extends JPanel implements IQuestionEvent, ITimeEvents, IMe
             } else {
                 timerLabel.setText("Timer: " + time + "s");
             }
+        });
+    }
+
+    @Override
+    public void onUserListUpdate(UserListPayload payload) {
+        SwingUtilities.invokeLater(() -> {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < payload.getClientIds().size(); i++) {
+                String name = payload.getDisplayNames().get(i);
+                int pts = payload.getPoints().get(i);
+                boolean locked = payload.getLockedIn().get(i);
+                sb.append(locked ? "🔒 " : "")
+                  .append(name)
+                  .append(" — ")
+                  .append(pts)
+                  .append(" pts")
+                  .append(System.lineSeparator());
+            }
+            playersArea.setText(sb.toString().trim());
         });
     }
 }

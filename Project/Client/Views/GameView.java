@@ -2,16 +2,11 @@ package Client.Views;
 
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
-import java.awt.Dimension;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 
-import javax.swing.BorderFactory;
-import javax.swing.JEditorPane;
 import javax.swing.JPanel;
-import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
-import javax.swing.JTextArea;
 
 import Client.CardViewName;
 import Client.Client;
@@ -26,7 +21,7 @@ public class GameView extends JPanel implements IPhaseEvent, IUserListEvent {
     private CardLayout cardLayout;
     private static final String READY_PANEL = "READY";
     private static final String PLAY_PANEL = "PLAY";
-    private final JEditorPane userListArea = new JEditorPane();
+    private final JSplitPane splitPane;
 
     public GameView(ICardControls controls) {
         super(new BorderLayout());
@@ -44,13 +39,14 @@ public class GameView extends JPanel implements IPhaseEvent, IUserListEvent {
         gameContainer.add(PLAY_PANEL, playView);
 
         GameEventsView gameEventsView = new GameEventsView();
-        JSplitPane splitPane = new JSplitPane(JSplitPane.VERTICAL_SPLIT, gameContainer, gameEventsView);
-        splitPane.setResizeWeight(0.7);
+        // Put the game events pane on the right (where the old Players panel was).
+        splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, gameContainer, gameEventsView);
+        splitPane.setResizeWeight(0.72);
 
         playView.addComponentListener(new ComponentAdapter() {
             @Override
             public void componentShown(ComponentEvent e) {
-                splitPane.setDividerLocation(0.7);
+                splitPane.setDividerLocation(0.72);
             }
         });
         playView.addComponentListener(new ComponentAdapter() {
@@ -61,15 +57,7 @@ public class GameView extends JPanel implements IPhaseEvent, IUserListEvent {
             }
         });
 
-        // User list shown during gameplay (lobby and in-session)
-        userListArea.setEditable(false);
-        userListArea.setContentType("text/html");
-        userListArea.setBorder(BorderFactory.createTitledBorder("Players"));
-        JScrollPane userScroll = new JScrollPane(userListArea);
-        userScroll.setPreferredSize(new Dimension(180, 100));
-
         this.add(splitPane, BorderLayout.CENTER);
-        this.add(userScroll, BorderLayout.EAST);
 
         controls.registerView(CardViewName.GAME_SCREEN.name(), this);
         setVisible(false);
@@ -87,44 +75,7 @@ public class GameView extends JPanel implements IPhaseEvent, IUserListEvent {
 
     @Override
     public void onUserListUpdate(UserListPayload payload) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("<html>");
-        for (int i = 0; i < payload.getClientIds().size(); i++) {
-            String name = payload.getDisplayNames().get(i);
-            long id = payload.getClientIds().get(i);
-            int pts = payload.getPoints().get(i);
-            boolean locked = payload.getLockedIn().get(i);
-            boolean isAway = payload.getAway().get(i);
-            boolean isSpectator = payload.getSpectator().get(i);
-            
-            // Build display string with visual indicators
-            String displayName = name;
-            String style = "";
-            
-            if (isAway) {
-                style = "color:gray; font-style:italic;";
-                displayName = "[AWAY] " + displayName;
-            }
-            if (isSpectator) {
-                displayName = "[SPECTATOR] " + displayName;
-                if (style.isEmpty()) {
-                    style = "color:blue;";
-                }
-            }
-            if (locked) {
-                displayName = "🔒 " + displayName;
-            }
-            
-            sb.append("<div style='").append(style).append("'>");
-            sb.append(displayName)
-              .append(" — ")
-              .append(pts)
-              .append(" pts");
-            sb.append("</div>");
-        }
-        sb.append("</html>");
-        userListArea.setContentType("text/html");
-        userListArea.setText(sb.toString());
+        // Players list is now rendered compactly under the timer in PlayView.
     }
 
 }

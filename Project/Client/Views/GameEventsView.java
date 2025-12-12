@@ -11,6 +11,7 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.JEditorPane;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollBar;
 import javax.swing.JScrollPane;
@@ -28,9 +29,16 @@ import Common.TimerType;
 
 public class GameEventsView extends JPanel implements IPhaseEvent, IReadyEvent, IMessageEvents, ITimeEvents {
     private final JPanel content;
-    private final boolean debugMode = true;
+    private final boolean debugMode = false;
     private final JLabel timerText;
     private final GridBagConstraints gbcGlue = new GridBagConstraints();
+
+    // Collect final scoreboard lines and show as a popup at game over.
+    private boolean collectingFinalScores = false;
+    private final StringBuilder finalScores = new StringBuilder();
+    // Collect answer key lines and show as a popup at game over.
+    private boolean collectingAnswerKey = false;
+    private final StringBuilder answerKey = new StringBuilder();
 
     public GameEventsView() {
         super(new BorderLayout(10, 10));
@@ -119,6 +127,49 @@ public class GameEventsView extends JPanel implements IPhaseEvent, IReadyEvent, 
     @Override
     public void onMessageReceive(long id, String message) {
         if (id == Constants.GAME_EVENT_CHANNEL || id == Constants.DEFAULT_CLIENT_ID) {
+            // When the server announces final scores, collect the bullet lines and pop a dialog.
+            if ("Final scores:".equals(message)) {
+                collectingFinalScores = true;
+                finalScores.setLength(0);
+                finalScores.append("Final scores:\n");
+                collectingAnswerKey = false;
+            } else if (collectingFinalScores) {
+                if (message.startsWith(" • ")) {
+                    // Keep the bullets in the popup (strip the leading space).
+                    finalScores.append(message.substring(1)).append("\n");
+                } else {
+                    collectingFinalScores = false;
+                    String text = finalScores.toString().trim();
+                    if (!text.isBlank()) {
+                        SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+                                this,
+                                text,
+                                "Game Over",
+                                JOptionPane.INFORMATION_MESSAGE));
+                    }
+                }
+            }
+
+            // Answer key popup (revealed only at end of session)
+            if ("Answer key:".equals(message)) {
+                collectingAnswerKey = true;
+                answerKey.setLength(0);
+                answerKey.append("Answer key:\n");
+            } else if (collectingAnswerKey) {
+                if (message.startsWith(" • ")) {
+                    answerKey.append(message.substring(1)).append("\n");
+                } else {
+                    collectingAnswerKey = false;
+                    String text = answerKey.toString().trim();
+                    if (!text.isBlank()) {
+                        SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+                                this,
+                                text,
+                                "Answer Key",
+                                JOptionPane.INFORMATION_MESSAGE));
+                    }
+                }
+            }
             addText(message);
         }
     }

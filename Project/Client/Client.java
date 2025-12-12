@@ -33,13 +33,14 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import javax.swing.SwingUtilities;
 
 /**
  * Demoing bi-directional communication between client and server in a
@@ -68,7 +69,7 @@ public enum Client {
     private final User myUser = new User();
     private Phase currentPhase = Phase.READY;
     // callback that updates the UI
-    private static final List<IClientEvents> events = new ArrayList<>();
+    private static final List<IClientEvents> events = new CopyOnWriteArrayList<>();
     private String currentRoom;
     private long hostClientId = Constants.DEFAULT_CLIENT_ID;
 
@@ -104,6 +105,10 @@ public enum Client {
 
     public boolean isHost() {
         return isMyClientId(hostClientId);
+    }
+
+    public Phase getCurrentPhase() {
+        return currentPhase;
     }
 
     public long getHostClientId() {
@@ -388,6 +393,7 @@ public enum Client {
                 break;
             case MESSAGE:
                 processMessage(payload);
+                break;
             case REVERSE:
                 processReverse(payload);
                 break;
@@ -462,14 +468,22 @@ public enum Client {
     }
 
     private <T> void passToUICallback(Class<T> type, java.util.function.Consumer<T> consumer) {
-        try {
-            for (IClientEvents event : events) {
-                if (type.isInstance(event)) {
-                    consumer.accept(type.cast(event));
+        Runnable work = () -> {
+            try {
+                for (IClientEvents event : events) {
+                    if (type.isInstance(event)) {
+                        consumer.accept(type.cast(event));
+                    }
                 }
+            } catch (Exception e) {
+                LoggerUtil.INSTANCE.severe("Error passing to callback", e);
             }
-        } catch (Exception e) {
-            LoggerUtil.INSTANCE.severe("Error passing to callback", e);
+        };
+        // Ensure Swing UI updates happen on the EDT to avoid input/menu deadlocks.
+        if (SwingUtilities.isEventDispatchThread()) {
+            work.run();
+        } else {
+            SwingUtilities.invokeLater(work);
         }
     }
 
@@ -713,6 +727,20 @@ public enum Client {
         }
         UserListPayload ulp = (UserListPayload) payload;
         hostClientId = ulp.getHostClientId();
+        // Populate knownClients from user list to avoid “unknown client” during ready sync
+        knownClients.clear();
+        for (int i = 0; i < ulp.getClientIds().size(); i++) {
+            long id = ulp.getClientIds().get(i);
+            String name = ulp.getDisplayNames().get(i);
+            int pts = ulp.getPoints().get(i);
+            boolean isReady = ulp.getLockedIn().get(i); // lockedIn used for UI; no ready flag here
+            User u = new User();
+            u.setClientId(id);
+            u.setClientName(name);
+            u.setPoints(pts);
+            u.setReady(isReady); // best-effort; ready status will be sync’d separately
+            knownClients.put(id, u);
+        }
         LoggerUtil.INSTANCE
                 .info(TextFX.colorize("User list updated: " + ulp.getClientIds().size() + " users", Color.CYAN));
         passToUICallback(IUserListEvent.class, e -> e.onUserListUpdate(ulp));

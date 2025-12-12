@@ -8,7 +8,9 @@ import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 
 import Client.Client;
+import Client.ClientUI;
 import Client.Interfaces.ICardControls;
+import Common.Phase;
 
 public class MenuBar extends JMenuBar {
     public MenuBar(ICardControls controls) {
@@ -16,6 +18,14 @@ public class MenuBar extends JMenuBar {
         JMenuItem connect = new JMenuItem("Connect");
         connect.addActionListener(_ -> controls.showView("CONNECT"));
         navigation.add(connect);
+
+        JMenuItem rooms = new JMenuItem("Rooms...");
+        rooms.addActionListener(_ -> {
+            if (controls instanceof ClientUI ui) {
+                ui.showRoomsDialog();
+            }
+        });
+        navigation.add(rooms);
         this.add(navigation);
 
         JMenu game = new JMenu("Game");
@@ -28,10 +38,9 @@ public class MenuBar extends JMenuBar {
     }
 
     private void showAddQuestionDialog() {
-        String currentRoom = Client.INSTANCE.getCurrentRoom();
-        if (currentRoom == null || "lobby".equalsIgnoreCase(currentRoom)) {
-            JOptionPane.showMessageDialog(this,
-                    "You can only add questions after joining a game room (not in lobby).");
+        // Allowed anywhere during READY, but not while a round is in progress.
+        if (Client.INSTANCE.getCurrentPhase() != Phase.READY) {
+            JOptionPane.showMessageDialog(this, "You can only add questions during Ready Check (not during gameplay).");
             return;
         }
 

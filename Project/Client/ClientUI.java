@@ -10,11 +10,17 @@ import java.awt.event.WindowEvent;
 import java.io.IOException;
 import java.util.List;
 
+import javax.swing.BorderFactory;
+import javax.swing.JButton;
+import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JMenuBar;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 
 import Client.Interfaces.ICardControls;
@@ -41,6 +47,11 @@ public class ClientUI extends JFrame implements ICardControls, IConnectionEvents
     private UserDetailsView userDetailsView;
     private ChatGameView chatGameView;
     private RoomsView roomsView;
+
+    // Rooms "popup" window (instead of always-on panel)
+    private JDialog roomsDialog;
+    private JTextArea roomsTextArea;
+    private JTextField roomNameField;
     {
         LoggerUtil.LoggerConfig config = new LoggerUtil.LoggerConfig();
         config.setFileSizeLimit(2048 * 1024); // 2MB
@@ -104,10 +115,88 @@ public class ClientUI extends JFrame implements ICardControls, IConnectionEvents
         chatGameView = new ChatGameView(this);
         roomsView = new RoomsView(this);
         roomsView.setVisible(false);
+        initRoomsDialog();
 
         showView(CardViewName.CONNECT);
         pack();
         setVisible(true);
+    }
+
+    private void initRoomsDialog() {
+        roomsDialog = new JDialog(this, "Rooms", false);
+        roomsDialog.setMinimumSize(new Dimension(360, 360));
+        roomsDialog.setSize(420, 420);
+        roomsDialog.setLocationRelativeTo(this);
+
+        JPanel root = new JPanel(new BorderLayout(8, 8));
+        root.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
+
+        roomsTextArea = new JTextArea();
+        roomsTextArea.setEditable(false);
+        root.add(new JScrollPane(roomsTextArea), BorderLayout.CENTER);
+
+        JPanel bottom = new JPanel(new BorderLayout(8, 8));
+        roomNameField = new JTextField();
+        roomNameField.setToolTipText("Room name");
+        bottom.add(roomNameField, BorderLayout.CENTER);
+
+        JPanel buttons = new JPanel();
+        JButton refresh = new JButton("Refresh");
+        refresh.addActionListener(_ -> requestRoomsList());
+        JButton create = new JButton("Create");
+        create.addActionListener(_ -> createRoomFromField());
+        JButton join = new JButton("Join");
+        join.addActionListener(_ -> joinRoomFromField());
+        buttons.add(refresh);
+        buttons.add(create);
+        buttons.add(join);
+        bottom.add(buttons, BorderLayout.EAST);
+
+        root.add(bottom, BorderLayout.SOUTH);
+        roomsDialog.setContentPane(root);
+    }
+
+    private void requestRoomsList() {
+        try {
+            Client.INSTANCE.sendMessage("/listrooms");
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, "Error requesting rooms: " + e.getMessage());
+        }
+    }
+
+    private void createRoomFromField() {
+        String name = roomNameField.getText() == null ? "" : roomNameField.getText().trim();
+        if (name.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Enter a room name to create.");
+            return;
+        }
+        try {
+            Client.INSTANCE.sendMessage("/createroom " + name);
+            requestRoomsList();
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, "Error creating room: " + e.getMessage());
+        }
+    }
+
+    private void joinRoomFromField() {
+        String name = roomNameField.getText() == null ? "" : roomNameField.getText().trim();
+        if (name.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Enter a room name to join.");
+            return;
+        }
+        try {
+            Client.INSTANCE.sendMessage("/joinroom " + name);
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, "Error joining room: " + e.getMessage());
+        }
+    }
+
+    public void showRoomsDialog() {
+        if (!roomsDialog.isVisible()) {
+            roomsDialog.setLocationRelativeTo(this);
+            roomsDialog.setVisible(true);
+        }
+        requestRoomsList();
     }
 
     private void findAndSetCurrentView() {
@@ -182,8 +271,11 @@ public class ClientUI extends JFrame implements ICardControls, IConnectionEvents
         LoggerUtil.INSTANCE.fine("Received client id: " + clientId);
         showView(CardViewName.CHAT_GAME_SCREEN);
         chatGameView.showChatOnlyView();
-        setSize(new Dimension(600, 600));
+        // Start in lobby with a reasonable default size; user can resize as needed.
+        setSize(new Dimension(520, 520));
         revalidate();
+        // Bring up the Rooms popup so the user can create/join first.
+        SwingUtilities.invokeLater(this::showRoomsDialog);
     }
 
     @Override
@@ -192,6 +284,10 @@ public class ClientUI extends JFrame implements ICardControls, IConnectionEvents
                 clientId, roomName, isJoin, isQuiet));
         if (Client.INSTANCE.isMyClientId(clientId) && isJoin) {
             currentRoomLabel.setText(String.format("Room: %s", roomName));
+            // If we've successfully joined a game room, hide the rooms popup.
+            if (roomName != null && !"lobby".equalsIgnoreCase(roomName) && roomsDialog != null) {
+                roomsDialog.setVisible(false);
+            }
         }
     }
 
@@ -206,8 +302,15 @@ public class ClientUI extends JFrame implements ICardControls, IConnectionEvents
         } else {
             builder.append("No rooms available");
         }
-        roomsView.setRooms(builder.toString().trim());
-        roomsView.setVisible(true);
+        String text = builder.toString().trim();
+        if (roomsTextArea != null) {
+            roomsTextArea.setText(text);
+        }
+        // Auto-pop the rooms window when we receive a rooms list.
+        if (roomsDialog != null && !roomsDialog.isVisible()) {
+            roomsDialog.setLocationRelativeTo(this);
+            roomsDialog.setVisible(true);
+        }
     }
 
 }

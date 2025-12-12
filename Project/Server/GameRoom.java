@@ -97,6 +97,8 @@ private boolean sessionActive = false;
 private int currentRound = 0;
 private Question currentQuestion = null;
 private final ArrayList<Long> correctOrder = new ArrayList<>();
+// Collect correct answers and reveal only at game over
+private final ArrayList<String> sessionAnswerKey = new ArrayList<>();
 
 private int timerSecondsLeft = 0;
 private Thread timerThread = null;
@@ -281,8 +283,10 @@ private boolean allActivePlayersReady() {
 }
 
 private synchronized void startSession() {
-    loadQuestionsFromFile(); // fresh question pool
-    customQuestions.clear(); // Reset custom questions for new session
+    // Don't reload questions here: it breaks in-memory custom questions by creating new objects,
+    // and makes /addq questions very unlikely to appear in the current session.
+    // Instead we refresh the pool at endSession().
+    sessionAnswerKey.clear();
     if (questionPool.isEmpty()) {
         broadcast(null, "No questions available. Game cannot start.");
         return;
@@ -310,6 +314,7 @@ private synchronized void endSession() {
 
     broadcast(null, "=== GAME OVER ===");
     showScoreboard("Final scores:");
+    showAnswerKey();
 
     // Reset points for next game
     for (Long id : points.keySet()) {
@@ -322,6 +327,11 @@ private synchronized void endSession() {
     sendUserListToAll();
     sendPhaseToAll(Phase.READY); // Return to ready check
     broadcast(null, "Type /ready to play again.");
+
+    // Reset question pool for the next session
+    loadQuestionsFromFile();
+    customQuestions.clear();
+    sessionAnswerKey.clear();
 }
 
 private synchronized void startNextRound() {
@@ -527,28 +537,22 @@ private void addBuiltInSampleQuestions() {
 }
 
 /** Draws & removes a random question from the pool, respecting enabledCategories if possible.
- * After round 3, prioritizes custom questions added during this session. */
+ * Prioritizes custom questions added during this session so they show up quickly. */
 private Question drawRandomQuestion() {
     if (questionPool.isEmpty()) return null;
 
-    // After round 3, prioritize custom questions
-    if (currentRound >= 3 && !customQuestions.isEmpty()) {
-        // Find custom questions that are still in the pool and match enabled categories
-        ArrayList<Integer> eligibleCustomIndices = new ArrayList<>();
-        for (int i = 0; i < questionPool.size(); i++) {
-            Question q = questionPool.get(i);
-            // Check if this question is in customQuestions list (by reference)
-            boolean isCustom = customQuestions.contains(q);
-            if (isCustom && (enabledCategories.isEmpty() || enabledCategories.contains(q.category))) {
-                eligibleCustomIndices.add(i);
+    // Prioritize custom questions (added via /addq) so they appear in the next rounds.
+    if (!customQuestions.isEmpty()) {
+        ArrayList<Question> eligibleCustom = new ArrayList<>();
+        for (Question q : customQuestions) {
+            if (enabledCategories.isEmpty() || enabledCategories.contains(q.category)) {
+                eligibleCustom.add(q);
             }
         }
-        if (!eligibleCustomIndices.isEmpty()) {
-            // Use a custom question
-            int poolIndex = eligibleCustomIndices.get(rng.nextInt(eligibleCustomIndices.size()));
-            Question selected = questionPool.remove(poolIndex);
-            // Remove from customQuestions list (by reference)
+        if (!eligibleCustom.isEmpty()) {
+            Question selected = eligibleCustom.get(rng.nextInt(eligibleCustom.size()));
             customQuestions.remove(selected);
+            questionPool.remove(selected); // remove by reference if still present
             return selected;
         }
     }
@@ -648,7 +652,8 @@ private boolean allActivePlayersLocked() {
 
 private synchronized void endRound(String reason) {
     broadcast(null, "Round ended: " + reason);
-    showCorrectAnswer();
+    // Requirement: only reveal answers after all rounds are done.
+    recordCorrectAnswerForSession();
     awardPoints();
     showScoreboard("Current scores:");
     sendUserListToAll();
@@ -661,14 +666,22 @@ private synchronized void endRound(String reason) {
     }
 }
 
-private void showCorrectAnswer() {
+// Stores the correct answer for later reveal at game over.
+private void recordCorrectAnswerForSession() {
     if (currentQuestion == null) return;
     int idx = currentQuestion.correctIndex;
     if (idx < 0 || idx >= currentQuestion.answers.size()) return;
-
     char letter = (char) ('A' + idx);
     String answerText = currentQuestion.answers.get(idx);
-    broadcast(null, "Correct answer: " + letter + " – " + answerText);
+    sessionAnswerKey.add(String.format("Round %d: %s – %s", currentRound, letter, answerText));
+}
+
+private void showAnswerKey() {
+    if (sessionAnswerKey.isEmpty()) return;
+    broadcast(null, "Answer key:");
+    for (String line : sessionAnswerKey) {
+        broadcast(null, " • " + line);
+    }
 }
 
 /**
@@ -876,7 +889,7 @@ private void handleAddQuestion(ServerThread sender, String args) {
     saveQuestionToFile(q);
     
     broadcast(null, "New question added in '" + q.category +
-            "' by " + sender.getDisplayName() + ". Will be used after round 3.");
+            "' by " + sender.getDisplayName() + ". Will be used in upcoming rounds.");
 }
 
 /**

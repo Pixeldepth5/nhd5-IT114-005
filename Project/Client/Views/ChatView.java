@@ -10,6 +10,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
 
 import Client.Client;
 import Client.Interfaces.ICardControls;
@@ -21,6 +22,7 @@ public class ChatView extends JPanel implements IMessageEvents, IUserListEvent {
     private final JTextArea chatArea = new JTextArea();
     private final JTextField input = new JTextField();
     private final JTextArea userListArea = new JTextArea();
+    private final JPanel rightPanel = new JPanel();
 
     public ChatView(ICardControls controls) {
         super(new BorderLayout());
@@ -33,7 +35,6 @@ public class ChatView extends JPanel implements IMessageEvents, IUserListEvent {
         userListArea.setEditable(false);
         userListArea.setBorder(BorderFactory.createTitledBorder("Players"));
         userListArea.setRows(8);
-        JPanel rightPanel = new JPanel();
         rightPanel.setLayout(new BoxLayout(rightPanel, BoxLayout.Y_AXIS));
         rightPanel.add(new JScrollPane(userListArea));
         rightPanel.add(Box.createVerticalGlue());
@@ -61,6 +62,24 @@ public class ChatView extends JPanel implements IMessageEvents, IUserListEvent {
 
     public void addMessage(String msg) {
         chatArea.append(msg + "\n");
+    }
+
+    public void focusInput() {
+        if (SwingUtilities.isEventDispatchThread()) {
+            input.requestFocusInWindow();
+        } else {
+            SwingUtilities.invokeLater(() -> input.requestFocusInWindow());
+        }
+    }
+
+    public void setShowUserList(boolean show) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            rightPanel.setVisible(show);
+            revalidate();
+            repaint();
+        } else {
+            SwingUtilities.invokeLater(() -> setShowUserList(show));
+        }
     }
 
     @Override
