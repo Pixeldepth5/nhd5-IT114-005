@@ -20,10 +20,6 @@ public class MenuBar extends JMenuBar {
 
         JMenu game = new JMenu("Game");
 
-        JMenuItem setCategories = new JMenuItem("Set Categories");
-        setCategories.addActionListener(_ -> showCategoriesDialog());
-        game.add(setCategories);
-
         JMenuItem addQuestion = new JMenuItem("Add Question");
         addQuestion.addActionListener(_ -> showAddQuestionDialog());
         game.add(addQuestion);
@@ -31,21 +27,14 @@ public class MenuBar extends JMenuBar {
         this.add(game);
     }
 
-    private void showCategoriesDialog() {
-        String cats = JOptionPane.showInputDialog(this,
-                "Comma-separated categories to enable (leave blank for all):");
-        if (cats == null) {
+    private void showAddQuestionDialog() {
+        String currentRoom = Client.INSTANCE.getCurrentRoom();
+        if (currentRoom == null || "lobby".equalsIgnoreCase(currentRoom)) {
+            JOptionPane.showMessageDialog(this,
+                    "You can only add questions after joining a game room (not in lobby).");
             return;
         }
-        try {
-            Client.INSTANCE.sendMessage("/categories " + cats);
-        } catch (IOException e) {
-            JOptionPane.showMessageDialog(this,
-                    "Error sending categories: " + e.getMessage());
-        }
-    }
 
-    private void showAddQuestionDialog() {
         String category = JOptionPane.showInputDialog(this,
                 "Category (e.g., geography, science, math, history, movies, sports):");
         if (category == null || category.trim().isEmpty())
@@ -55,32 +44,62 @@ public class MenuBar extends JMenuBar {
         if (question == null || question.trim().isEmpty())
             return;
 
-        String answerA = JOptionPane.showInputDialog(this, "Answer A:");
-        if (answerA == null || answerA.trim().isEmpty())
-            return;
+        // Collect 2-4 answers
+        java.util.ArrayList<String> answers = new java.util.ArrayList<>();
+        String[] answerLabels = {"A", "B", "C", "D"};
+        
+        for (int i = 0; i < 4; i++) {
+            String answer = JOptionPane.showInputDialog(this, 
+                    String.format("Answer %s (leave blank to finish, minimum 2 answers required):", answerLabels[i]));
+            if (answer == null) {
+                // User cancelled
+                if (answers.size() < 2) {
+                    JOptionPane.showMessageDialog(this,
+                            "You need at least 2 answers. Question not added.");
+                    return;
+                }
+                break;
+            }
+            String trimmed = answer.trim();
+            if (trimmed.isEmpty()) {
+                // Empty answer - stop here if we have at least 2
+                if (answers.size() < 2) {
+                    JOptionPane.showMessageDialog(this,
+                            "You need at least 2 answers. Question not added.");
+                    return;
+                }
+                break;
+            }
+            answers.add(trimmed);
+            
+            // If we have 4 answers, stop
+            if (answers.size() == 4) {
+                break;
+            }
+        }
 
-        String answerB = JOptionPane.showInputDialog(this, "Answer B:");
-        if (answerB == null || answerB.trim().isEmpty())
+        if (answers.size() < 2) {
+            JOptionPane.showMessageDialog(this,
+                    "You need at least 2 answers. Question not added.");
             return;
+        }
 
-        String answerC = JOptionPane.showInputDialog(this, "Answer C:");
-        if (answerC == null || answerC.trim().isEmpty())
-            return;
-
-        String answerD = JOptionPane.showInputDialog(this, "Answer D:");
-        if (answerD == null || answerD.trim().isEmpty())
-            return;
+        // Build answer string with empty strings for missing answers (to maintain format)
+        String answerA = answers.size() > 0 ? answers.get(0) : "";
+        String answerB = answers.size() > 1 ? answers.get(1) : "";
+        String answerC = answers.size() > 2 ? answers.get(2) : "";
+        String answerD = answers.size() > 3 ? answers.get(3) : "";
 
         String correctStr = JOptionPane.showInputDialog(this,
-                "Correct answer index (0=A, 1=B, 2=C, 3=D):");
+                String.format("Correct answer index (0-%d):", answers.size() - 1));
         if (correctStr == null || correctStr.trim().isEmpty())
             return;
 
         try {
             int correctIndex = Integer.parseInt(correctStr.trim());
-            if (correctIndex < 0 || correctIndex > 3) {
+            if (correctIndex < 0 || correctIndex >= answers.size()) {
                 JOptionPane.showMessageDialog(this,
-                        "Invalid index. Must be 0, 1, 2, or 3.");
+                        String.format("Invalid index. Must be between 0 and %d.", answers.size() - 1));
                 return;
             }
 

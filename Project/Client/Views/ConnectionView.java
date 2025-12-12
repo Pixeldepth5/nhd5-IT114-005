@@ -13,10 +13,13 @@ import Client.CardViewName;
 import Client.Interfaces.ICardControls;
 
 public class ConnectionView extends JPanel {
+    private String username;
     private String host;
     private int port;
+    private final JTextField usernameField = new JTextField();
     private final JTextField hostField = new JTextField("127.0.0.1");
     private final JTextField portField = new JTextField("3000");
+    private final JLabel usernameError = new JLabel();
     private final JLabel hostError = new JLabel();
     private final JLabel portError = new JLabel();
 
@@ -28,6 +31,12 @@ public class ConnectionView extends JPanel {
         JPanel content = new JPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+        content.add(new JLabel("Username:"));
+        usernameField.setToolTipText("Enter your username");
+        content.add(usernameField);
+        usernameError.setVisible(false);
+        content.add(usernameError);
 
         content.add(new JLabel("Host:"));
         hostField.setToolTipText("Enter the host address");
@@ -41,17 +50,30 @@ public class ConnectionView extends JPanel {
         portError.setVisible(false);
         content.add(portError);
 
-        JButton nextButton = new JButton("Next");
-        nextButton.setAlignmentX(JButton.CENTER_ALIGNMENT);
-        nextButton.addActionListener(_ -> onNext(controls));
+        JButton connectButton = new JButton("Connect");
+        connectButton.setAlignmentX(JButton.CENTER_ALIGNMENT);
+        connectButton.addActionListener(_ -> onConnect(controls));
         content.add(Box.createVerticalStrut(10));
-        content.add(nextButton);
+        content.add(connectButton);
 
         add(content, BorderLayout.CENTER);
     }
 
-    private void onNext(ICardControls controls) {
+    private void onConnect(ICardControls controls) {
         boolean valid = true;
+        
+        // Validate username
+        String incomingUsername = usernameField.getText().trim();
+        if (incomingUsername.isEmpty()) {
+            usernameError.setText("Username must be provided");
+            usernameError.setVisible(true);
+            valid = false;
+        } else {
+            username = incomingUsername;
+            usernameError.setVisible(false);
+        }
+        
+        // Validate port
         try {
             port = Integer.parseInt(portField.getText());
             portError.setVisible(false);
@@ -60,10 +82,15 @@ public class ConnectionView extends JPanel {
             portError.setVisible(true);
             valid = false;
         }
+        
         if (valid) {
             host = hostField.getText();
-            controls.nextView();
+            controls.connect();
         }
+    }
+
+    public String getUsername() {
+        return username;
     }
 
     public String getHost() {

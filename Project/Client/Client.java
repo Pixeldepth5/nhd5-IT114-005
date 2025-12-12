@@ -1,5 +1,33 @@
 package Client;
 
+import Client.Interfaces.IClientEvents;
+import Client.Interfaces.IConnectionEvents;
+import Client.Interfaces.IMessageEvents;
+import Client.Interfaces.IPhaseEvent;
+import Client.Interfaces.IPointsEvent;
+import Client.Interfaces.IQuestionEvent;
+import Client.Interfaces.IReadyEvent;
+import Client.Interfaces.IRoomEvents;
+import Client.Interfaces.ITimeEvents;
+import Client.Interfaces.ITurnEvent;
+import Client.Interfaces.IUserListEvent;
+import Common.Command;
+import Common.ConnectionPayload;
+import Common.Constants;
+import Common.LoggerUtil;
+import Common.Payload;
+import Common.PayloadType;
+import Common.Phase;
+import Common.PointsPayload;
+import Common.QAPayload;
+import Common.ReadyPayload;
+import Common.RoomAction;
+import Common.RoomResultPayload;
+import Common.TextFX;
+import Common.TextFX.Color;
+import Common.TimerPayload;
+import Common.User;
+import Common.UserListPayload;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -12,35 +40,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import Client.Interfaces.IClientEvents;
-import Client.Interfaces.IConnectionEvents;
-import Client.Interfaces.IMessageEvents;
-import Client.Interfaces.IPhaseEvent;
-import Client.Interfaces.IPointsEvent;
-import Client.Interfaces.IReadyEvent;
-import Client.Interfaces.IRoomEvents;
-import Client.Interfaces.ITimeEvents;
-import Client.Interfaces.ITurnEvent;
-import Client.Interfaces.IQuestionEvent;
-import Client.Interfaces.IUserListEvent;
-import Common.Command;
-import Common.ConnectionPayload;
-import Common.Constants;
-import Common.LoggerUtil;
-import Common.Payload;
-import Common.PayloadType;
-import Common.Phase;
-import Common.PointsPayload;
-import Common.ReadyPayload;
-import Common.RoomAction;
-import Common.RoomResultPayload;
-import Common.TextFX;
-import Common.User;
-import Common.TextFX.Color;
-import Common.TimerPayload;
-import Common.QAPayload;
-import Common.UserListPayload;
 
 /**
  * Demoing bi-directional communication between client and server in a
@@ -71,6 +70,7 @@ public enum Client {
     // callback that updates the UI
     private static final List<IClientEvents> events = new ArrayList<>();
     private String currentRoom;
+    private long hostClientId = Constants.DEFAULT_CLIENT_ID;
 
     private void error(String message) {
         LoggerUtil.INSTANCE.severe(TextFX.colorize(String.format("%s", message), Color.RED));
@@ -102,6 +102,14 @@ public enum Client {
         return isMyClientIdSet() && myUser.getClientId() == clientId;
     }
 
+    public boolean isHost() {
+        return isMyClientId(hostClientId);
+    }
+
+    public long getHostClientId() {
+        return hostClientId;
+    }
+
     public boolean isConnected() {
         if (server == null) {
             return false;
@@ -115,34 +123,6 @@ public enum Client {
 
     /**
      * Takes an IP address and a port to attempt a socket connection to a server.
-     * 
-     * @param address
-     * @param port
-     * @return true if connection was successful
-     */
-    @Deprecated
-    private boolean connect(String address, int port) {
-        try {
-            server = new Socket(address, port);
-            // channel to send to server
-            out = new ObjectOutputStream(server.getOutputStream());
-            // channel to listen to server
-            in = new ObjectInputStream(server.getInputStream());
-            LoggerUtil.INSTANCE.info("Client connected");
-            // Use CompletableFuture to run listenToServer() in a separate thread
-            CompletableFuture.runAsync(this::listenToServer);
-        } catch (UnknownHostException e) {
-            LoggerUtil.INSTANCE.severe(
-                    String.format("Unable to connect to host %s:%d (unknown host)", address, port), e);
-        } catch (IOException e) {
-            LoggerUtil.INSTANCE.severe(
-                    String.format("I/O error while connecting to %s:%d", address, port), e);
-        }
-        return isConnected();
-    }
-
-    /**
-     * Takes an ip address and a port to attempt a socket connection to a server.
      * 
      * @param address
      * @param port
@@ -214,7 +194,7 @@ public enum Client {
                     return true;
                 }
                 String[] parts = text.trim().replaceAll(" +", " ").split(" ")[1].split(":");
-                connect(parts[0].trim(), Integer.parseInt(parts[1].trim()));
+                connect(parts[0].trim(), Integer.parseInt(parts[1].trim()), myUser.getClientName());
                 sendClientName(myUser.getClientName());// sync follow-up data (handshake)
                 wasCommand = true;
             } else if (text.startsWith(Command.NAME.command)) {
@@ -712,6 +692,10 @@ public enum Client {
                 payload.getMessage()));
     }
 
+    public String getCurrentRoom() {
+        return currentRoom;
+    }
+
     private void processQuestion(Payload payload) {
         if (!(payload instanceof QAPayload)) {
             error("Invalid payload subclass for processQuestion");
@@ -728,6 +712,7 @@ public enum Client {
             return;
         }
         UserListPayload ulp = (UserListPayload) payload;
+        hostClientId = ulp.getHostClientId();
         LoggerUtil.INSTANCE
                 .info(TextFX.colorize("User list updated: " + ulp.getClientIds().size() + " users", Color.CYAN));
         passToUICallback(IUserListEvent.class, e -> e.onUserListUpdate(ulp));

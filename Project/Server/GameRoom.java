@@ -2,8 +2,10 @@ package Server;
 
 import Common.*;
 import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.util.*;
 
@@ -80,6 +82,7 @@ private static final int ROUND_SECONDS = 30;
 
 // Question bank
 private final ArrayList<Question> questionPool = new ArrayList<>();
+private final ArrayList<Question> customQuestions = new ArrayList<>(); // Questions added during this session
 private final Random rng = new Random();
 
 // Per-player state
@@ -131,6 +134,24 @@ protected synchronized void addClient(ServerThread client) {
     away.putIfAbsent(id, false);
     spectator.putIfAbsent(id, false);
     lockedThisRound.put(id, false);
+
+    // First client becomes host
+    if (hostClientId == Constants.DEFAULT_CLIENT_ID) {
+        hostClientId = id;
+    }
+
+    // Immediately sync current phase to the newly joined client so UI shows correct view
+    Phase phaseForClient = sessionActive ? Phase.IN_PROGRESS : Phase.READY;
+    sendPhaseToSingleClient(client, phaseForClient);
+
+    // Sync current ready states to the newly joined client (quietly)
+    for (Map.Entry<Long, Boolean> entry : ready.entrySet()) {
+        ReadyPayload rp = new ReadyPayload();
+        rp.setPayloadType(PayloadType.SYNC_READY);
+        rp.setClientId(entry.getKey());
+        rp.setReady(entry.getValue());
+        client.sendPayload(rp);
+    }
 
     // If a game is in progress, new players come in as spectators
     if (sessionActive) {
@@ -199,7 +220,15 @@ protected synchronized void handleMessage(ServerThread sender, String msg) {
         return;
     }
 
-    // Non-command text is chat; Room handles [CHAT] prefix
+    // Non-command text is chat; prevent spectators from chatting
+    long id = sender.getClientId();
+    if (spectator.getOrDefault(id, false)) {
+        sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                "Spectators cannot send messages.");
+        return;
+    }
+    
+    // Room handles [CHAT] prefix
     super.handleMessage(sender, text);
 }
 
@@ -253,6 +282,7 @@ private boolean allActivePlayersReady() {
 
 private synchronized void startSession() {
     loadQuestionsFromFile(); // fresh question pool
+    customQuestions.clear(); // Reset custom questions for new session
     if (questionPool.isEmpty()) {
         broadcast(null, "No questions available. Game cannot start.");
         return;
@@ -290,6 +320,7 @@ private synchronized void endSession() {
     timerSecondsLeft = 0;
 
     sendUserListToAll();
+    sendPhaseToAll(Phase.READY); // Return to ready check
     broadcast(null, "Type /ready to play again.");
 }
 
@@ -427,8 +458,16 @@ private Question parseQuestionLine(String line) {
     Question q = new Question();
     q.category = parts[0].trim().toLowerCase();
     q.text = parts[1].trim();
+    // Add only non-empty answers (supports 2-4 answers)
     for (int i = 2; i <= 5; i++) {
-        q.answers.add(parts[i].trim());
+        String answer = parts[i].trim();
+        if (!answer.isEmpty()) {
+            q.answers.add(answer);
+        }
+    }
+    // Validate we have 2-4 answers
+    if (q.answers.size() < 2 || q.answers.size() > 4) {
+        return null;
     }
     try {
         q.correctIndex = Integer.parseInt(parts[6].trim());
@@ -487,10 +526,34 @@ private void addBuiltInSampleQuestions() {
     questionPool.add(q6);
 }
 
-/** Draws & removes a random question from the pool, respecting enabledCategories if possible */
+/** Draws & removes a random question from the pool, respecting enabledCategories if possible.
+ * After round 3, prioritizes custom questions added during this session. */
 private Question drawRandomQuestion() {
     if (questionPool.isEmpty()) return null;
 
+    // After round 3, prioritize custom questions
+    if (currentRound >= 3 && !customQuestions.isEmpty()) {
+        // Find custom questions that are still in the pool and match enabled categories
+        ArrayList<Integer> eligibleCustomIndices = new ArrayList<>();
+        for (int i = 0; i < questionPool.size(); i++) {
+            Question q = questionPool.get(i);
+            // Check if this question is in customQuestions list (by reference)
+            boolean isCustom = customQuestions.contains(q);
+            if (isCustom && (enabledCategories.isEmpty() || enabledCategories.contains(q.category))) {
+                eligibleCustomIndices.add(i);
+            }
+        }
+        if (!eligibleCustomIndices.isEmpty()) {
+            // Use a custom question
+            int poolIndex = eligibleCustomIndices.get(rng.nextInt(eligibleCustomIndices.size()));
+            Question selected = questionPool.remove(poolIndex);
+            // Remove from customQuestions list (by reference)
+            customQuestions.remove(selected);
+            return selected;
+        }
+    }
+
+    // Normal selection from question pool
     ArrayList<Integer> eligible = new ArrayList<>();
     for (int i = 0; i < questionPool.size(); i++) {
         Question q = questionPool.get(i);
@@ -671,8 +734,13 @@ private void sendUserListToAll() {
     UserListPayload up = new UserListPayload();
     up.setPayloadType(PayloadType.USER_LIST);
     up.setClientId(Constants.DEFAULT_CLIENT_ID);
+    up.setHostClientId(hostClientId);
 
-    for (ServerThread st : getClients()) {
+    // Sort clients by ID to ensure same order across all clients
+    java.util.ArrayList<ServerThread> sortedClients = new java.util.ArrayList<>(getClients());
+    sortedClients.sort((a, b) -> Long.compare(a.getClientId(), b.getClientId()));
+
+    for (ServerThread st : sortedClients) {
         long id = st.getClientId();
         String name = st.getDisplayName();
         int pts = points.getOrDefault(id, 0);
@@ -786,6 +854,11 @@ private void handleAddQuestion(ServerThread sender, String args) {
                 "You can only add questions while no game is running.");
         return;
     }
+        if (Room.LOBBY.equalsIgnoreCase(this.name)) {
+            sender.sendMessage(Constants.DEFAULT_CLIENT_ID,
+                    "Add questions after joining a game room (not in lobby).");
+            return;
+        }
 
     Question q = parseQuestionLine(args);
     if (q == null) {
@@ -794,15 +867,61 @@ private void handleAddQuestion(ServerThread sender, String args) {
         return;
     }
 
+    // Add to question pool for this session
     questionPool.add(q);
+    // Also track as custom question
+    customQuestions.add(q);
+    
+    // Save to server-side file
+    saveQuestionToFile(q);
+    
     broadcast(null, "New question added in '" + q.category +
-            "' by " + sender.getDisplayName() + ".");
-    // (Optional) append to file – skipped to keep things simple
+            "' by " + sender.getDisplayName() + ". Will be used after round 3.");
+}
+
+/**
+ * Saves a custom question to the server-side questions.txt file.
+ */
+private void saveQuestionToFile(Question q) {
+    File f = new File("Server/questions.txt");
+    if (!f.exists()) {
+        f = new File("questions.txt");
+    }
+    
+    try (BufferedWriter bw = new BufferedWriter(new FileWriter(f, true))) {
+        // Format: category|question|a1|a2|a3|a4|correctIndex
+        StringBuilder line = new StringBuilder();
+        line.append(q.category).append("|");
+        line.append(q.text).append("|");
+        // Add all answers (2-4 answers), pad to 4 with empty strings
+        for (int i = 0; i < 4; i++) {
+            if (i < q.answers.size()) {
+                line.append(q.answers.get(i));
+            }
+            // Always add separator after each answer slot
+            line.append("|");
+        }
+        line.append(q.correctIndex);
+        bw.newLine();
+        bw.write(line.toString());
+        bw.flush();
+    } catch (IOException e) {
+        // Log error but don't fail - question is still added to pool
+        System.err.println("Failed to save question to file: " + e.getMessage());
+    }
 }
 
 // =====================================================================
 // Phase sync
 // =====================================================================
+private void sendPhaseToSingleClient(ServerThread client, Phase phase) {
+    Payload p = new Payload();
+    p.setPayloadType(PayloadType.PHASE);
+    p.setClientId(Constants.DEFAULT_CLIENT_ID);
+    p.setMessage(phase.name());
+    client.sendPayload(p);
+}
+
 private void sendPhaseToAll(Phase phase) {
     Payload p = new Payload();
     p.setPayloadType(PayloadType.PHASE);

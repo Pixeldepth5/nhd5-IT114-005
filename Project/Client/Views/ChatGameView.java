@@ -75,6 +75,10 @@ public class ChatGameView extends JPanel implements IRoomEvents, IPhaseEvent {
         if (isJoin && Constants.LOBBY.equalsIgnoreCase(roomName)) {
             showChatOnlyView();
         }
+        // Entering a game room should reveal the game/ready panels
+        if (isJoin && !Constants.LOBBY.equalsIgnoreCase(roomName)) {
+            showGameView();
+        }
 
     }
 

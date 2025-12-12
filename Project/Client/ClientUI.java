@@ -156,7 +156,7 @@ public class ClientUI extends JFrame implements ICardControls, IConnectionEvents
 
     @Override
     public void connect() {
-        String username = userDetailsView.getUsername();
+        String username = connectionView.getUsername();
         String host = connectionView.getHost();
         int port = connectionView.getPort();
         setTitle(String.format("%s - %s", originalTitle, username));

@@ -17,6 +17,7 @@ public class UserListPayload extends Payload {
     private ArrayList<Boolean> lockedIn = new ArrayList<>();
     private ArrayList<Boolean> away = new ArrayList<>();
     private ArrayList<Boolean> spectator = new ArrayList<>();
+    private long hostClientId = Constants.DEFAULT_CLIENT_ID;
 
     /**
      * Adds a user to the synchronized user list.
@@ -59,6 +60,14 @@ public class UserListPayload extends Payload {
 
     public ArrayList<Boolean> getSpectator() {
         return spectator;
+    }
+
+    public long getHostClientId() {
+        return hostClientId;
+    }
+
+    public void setHostClientId(long hostClientId) {
+        this.hostClientId = hostClientId;
     }
 
     @Override

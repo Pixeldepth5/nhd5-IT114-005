@@ -7,6 +7,7 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 
 import javax.swing.BorderFactory;
+import javax.swing.JEditorPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
@@ -25,7 +26,7 @@ public class GameView extends JPanel implements IPhaseEvent, IUserListEvent {
     private CardLayout cardLayout;
     private static final String READY_PANEL = "READY";
     private static final String PLAY_PANEL = "PLAY";
-    private final JTextArea userListArea = new JTextArea();
+    private final JEditorPane userListArea = new JEditorPane();
 
     public GameView(ICardControls controls) {
         super(new BorderLayout());
@@ -62,6 +63,7 @@ public class GameView extends JPanel implements IPhaseEvent, IUserListEvent {
 
         // User list shown during gameplay (lobby and in-session)
         userListArea.setEditable(false);
+        userListArea.setContentType("text/html");
         userListArea.setBorder(BorderFactory.createTitledBorder("Players"));
         JScrollPane userScroll = new JScrollPane(userListArea);
         userScroll.setPreferredSize(new Dimension(180, 100));
@@ -86,18 +88,43 @@ public class GameView extends JPanel implements IPhaseEvent, IUserListEvent {
     @Override
     public void onUserListUpdate(UserListPayload payload) {
         StringBuilder sb = new StringBuilder();
+        sb.append("<html>");
         for (int i = 0; i < payload.getClientIds().size(); i++) {
             String name = payload.getDisplayNames().get(i);
+            long id = payload.getClientIds().get(i);
             int pts = payload.getPoints().get(i);
             boolean locked = payload.getLockedIn().get(i);
-            sb.append(name)
+            boolean isAway = payload.getAway().get(i);
+            boolean isSpectator = payload.getSpectator().get(i);
+            
+            // Build display string with visual indicators
+            String displayName = name;
+            String style = "";
+            
+            if (isAway) {
+                style = "color:gray; font-style:italic;";
+                displayName = "[AWAY] " + displayName;
+            }
+            if (isSpectator) {
+                displayName = "[SPECTATOR] " + displayName;
+                if (style.isEmpty()) {
+                    style = "color:blue;";
+                }
+            }
+            if (locked) {
+                displayName = "🔒 " + displayName;
+            }
+            
+            sb.append("<div style='").append(style).append("'>");
+            sb.append(displayName)
               .append(" — ")
               .append(pts)
-              .append(" pts")
-              .append(locked ? " [locked]" : "")
-              .append(System.lineSeparator());
+              .append(" pts");
+            sb.append("</div>");
         }
-        userListArea.setText(sb.toString().trim());
+        sb.append("</html>");
+        userListArea.setContentType("text/html");
+        userListArea.setText(sb.toString());
     }
 
 }
