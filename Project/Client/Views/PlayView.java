@@ -11,8 +11,6 @@ import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 
@@ -20,21 +18,18 @@ import Client.Client;
 import Client.Interfaces.IMessageEvents;
 import Client.Interfaces.IQuestionEvent;
 import Client.Interfaces.ITimeEvents;
-import Client.Interfaces.IUserListEvent;
 import Common.Constants;
 import Common.Phase;
 import Common.QAPayload;
 import Common.TimerType;
-import Common.UserListPayload;
 
 /**
  * PlayView shows the trivia question and answer buttons.
  */
-public class PlayView extends JPanel implements IQuestionEvent, ITimeEvents, IMessageEvents, IUserListEvent {
+public class PlayView extends JPanel implements IQuestionEvent, ITimeEvents, IMessageEvents {
     private final JLabel categoryLabel = new JLabel("Category: ");
     private final JLabel questionLabel = new JLabel("Question will appear here");
     private final JLabel timerLabel = new JLabel("Timer: --");
-    private final JTextArea playersArea = new JTextArea();
     private final JButton[] answerButtons = new JButton[4];
     private final JLabel statusLabel = new JLabel(" ");
     private List<String> currentAnswers = new ArrayList<>();
@@ -52,18 +47,6 @@ public class PlayView extends JPanel implements IQuestionEvent, ITimeEvents, IMe
         questionPanel.add(categoryLabel);
         questionPanel.add(questionLabel);
         questionPanel.add(timerLabel);
-
-        // Compact players list under the round timer
-        playersArea.setEditable(false);
-        playersArea.setRows(4);
-        playersArea.setLineWrap(true);
-        playersArea.setWrapStyleWord(true);
-        playersArea.setBorder(BorderFactory.createTitledBorder("Players"));
-        playersArea.setFont(playersArea.getFont().deriveFont(11f));
-        JScrollPane playersScroll = new JScrollPane(playersArea);
-        playersScroll.setBorder(BorderFactory.createEmptyBorder());
-        questionPanel.add(playersScroll);
-
         add(questionPanel, BorderLayout.NORTH);
 
         JPanel answersPanel = new JPanel(new GridLayout(2, 2, 8, 8));
@@ -234,25 +217,6 @@ public class PlayView extends JPanel implements IQuestionEvent, ITimeEvents, IMe
             } else {
                 timerLabel.setText("Timer: " + time + "s");
             }
-        });
-    }
-
-    @Override
-    public void onUserListUpdate(UserListPayload payload) {
-        SwingUtilities.invokeLater(() -> {
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < payload.getClientIds().size(); i++) {
-                String name = payload.getDisplayNames().get(i);
-                int pts = payload.getPoints().get(i);
-                boolean locked = payload.getLockedIn().get(i);
-                sb.append(locked ? "🔒 " : "")
-                  .append(name)
-                  .append(" — ")
-                  .append(pts)
-                  .append(" pts")
-                  .append(System.lineSeparator());
-            }
-            playersArea.setText(sb.toString().trim());
         });
     }
 }

@@ -29,7 +29,7 @@ import Common.TimerType;
 
 public class GameEventsView extends JPanel implements IPhaseEvent, IReadyEvent, IMessageEvents, ITimeEvents {
     private final JPanel content;
-    private final boolean debugMode = false;
+    private final boolean debugMode = true;
     private final JLabel timerText;
     private final GridBagConstraints gbcGlue = new GridBagConstraints();
 

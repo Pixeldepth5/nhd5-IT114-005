@@ -283,9 +283,8 @@ private boolean allActivePlayersReady() {
 }
 
 private synchronized void startSession() {
-    // Don't reload questions here: it breaks in-memory custom questions by creating new objects,
-    // and makes /addq questions very unlikely to appear in the current session.
-    // Instead we refresh the pool at endSession().
+    loadQuestionsFromFile(); // fresh question pool
+    customQuestions.clear(); // Reset custom questions for new session
     sessionAnswerKey.clear();
     if (questionPool.isEmpty()) {
         broadcast(null, "No questions available. Game cannot start.");
@@ -327,11 +326,6 @@ private synchronized void endSession() {
     sendUserListToAll();
     sendPhaseToAll(Phase.READY); // Return to ready check
     broadcast(null, "Type /ready to play again.");
-
-    // Reset question pool for the next session
-    loadQuestionsFromFile();
-    customQuestions.clear();
-    sessionAnswerKey.clear();
 }
 
 private synchronized void startNextRound() {
@@ -537,22 +531,28 @@ private void addBuiltInSampleQuestions() {
 }
 
 /** Draws & removes a random question from the pool, respecting enabledCategories if possible.
- * Prioritizes custom questions added during this session so they show up quickly. */
+ * After round 3, prioritizes custom questions added during this session. */
 private Question drawRandomQuestion() {
     if (questionPool.isEmpty()) return null;
 
-    // Prioritize custom questions (added via /addq) so they appear in the next rounds.
-    if (!customQuestions.isEmpty()) {
-        ArrayList<Question> eligibleCustom = new ArrayList<>();
-        for (Question q : customQuestions) {
-            if (enabledCategories.isEmpty() || enabledCategories.contains(q.category)) {
-                eligibleCustom.add(q);
+    // After round 3, prioritize custom questions
+    if (currentRound >= 3 && !customQuestions.isEmpty()) {
+        // Find custom questions that are still in the pool and match enabled categories
+        ArrayList<Integer> eligibleCustomIndices = new ArrayList<>();
+        for (int i = 0; i < questionPool.size(); i++) {
+            Question q = questionPool.get(i);
+            // Check if this question is in customQuestions list (by reference)
+            boolean isCustom = customQuestions.contains(q);
+            if (isCustom && (enabledCategories.isEmpty() || enabledCategories.contains(q.category))) {
+                eligibleCustomIndices.add(i);
             }
         }
-        if (!eligibleCustom.isEmpty()) {
-            Question selected = eligibleCustom.get(rng.nextInt(eligibleCustom.size()));
+        if (!eligibleCustomIndices.isEmpty()) {
+            // Use a custom question
+            int poolIndex = eligibleCustomIndices.get(rng.nextInt(eligibleCustomIndices.size()));
+            Question selected = questionPool.remove(poolIndex);
+            // Remove from customQuestions list (by reference)
             customQuestions.remove(selected);
-            questionPool.remove(selected); // remove by reference if still present
             return selected;
         }
     }
@@ -889,7 +889,7 @@ private void handleAddQuestion(ServerThread sender, String args) {
     saveQuestionToFile(q);
     
     broadcast(null, "New question added in '" + q.category +
-            "' by " + sender.getDisplayName() + ". Will be used in upcoming rounds.");
+            "' by " + sender.getDisplayName() + ". Will be used after round 3.");
 }
 
 /**
