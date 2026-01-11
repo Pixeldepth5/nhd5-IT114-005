@@ -1,0 +1,33 @@
+# category|question|answer1|answer2|answer3|answer4|correctIndex
+geography|What is the capital of France?|Paris|London|Berlin|Madrid|0
+geography|Which continent is Brazil located on?|Europe|Asia|South America|Africa|2
+geography|Which ocean is on the west coast of the United States?|Indian Ocean|Atlantic Ocean|Arctic Ocean|Pacific Ocean|3
+geography|Which desert is the largest hot desert in the world?|Sahara|Gobi|Kalahari|Mojave|0
+
+science|What gas do plants absorb from the atmosphere for photosynthesis?|Oxygen|Carbon dioxide|Nitrogen|Helium|1
+science|What is the chemical symbol for water?|H2|HO2|H2O|O2H|2
+science|What force keeps us on the ground?|Magnetism|Friction|Gravity|Electricity|2
+science|What planet is known as the Red Planet?|Venus|Mars|Jupiter|Mercury|1
+
+math|What is 7 × 8?|48|54|56|64|2
+math|What is the square root of 81?|7|8|9|10|2
+math|What is 15% of 200?|20|25|30|35|2
+math|What is 3² + 4²?|12|17|25|7|1
+
+history|Who was the first President of the United States?|Abraham Lincoln|George Washington|Thomas Jefferson|John Adams|1
+history|In which year did World War II end?|1918|1945|1939|1963|1
+history|The Great Wall is located in which country?|India|China|Japan|Russia|1
+history|Which empire built the Colosseum?|Greek Empire|Ottoman Empire|Roman Empire|Mongol Empire|2
+
+movies|Which movie features the character “Iron Man”?|The Dark Knight|Iron Man|Avatar|Titanic|1
+movies|Who directed “Jurassic Park”?|Steven Spielberg|James Cameron|Ridley Scott|Christopher Nolan|0
+movies|Which movie won the Oscar for Best Picture in 1998 (“king of the world” scene)?|Titanic|Forrest Gump|Gladiator|The Matrix|0
+movies|Which series features Hogwarts School?|Star Wars|Harry Potter|The Lord of the Rings|Pirates of the Caribbean|1
+
+sports|How many players are on the field for one soccer team during play?|9|10|11|12|2
+sports|How many points is a three-pointer worth in basketball?|1|2|3|4|2
+sports|Which sport uses a bat, ball, and bases?|Soccer|Cricket|Tennis|Baseball|3
+sports|In tennis, what word is used for a score of zero?|Zero|Blank|Love|Nil|2
+
+geography|what the largest contient?|anartica|north america|egypt|europe|0
+math|what 4 by 5|15|30|20|10|2
